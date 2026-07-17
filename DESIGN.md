@@ -188,6 +188,17 @@ query strings are a privacy minefield; if kept, allowlist exactly `utm_source/me
    export first. Leaning: type-to-confirm offers "download a JSON export first" link.
 5. **Site id**: random short id vs domain-derived. Random (domain can change; id is in the
    public script tag — must not be guessable-sequential).
+6. **Returning visitors.** Impossible across days under the pure design (daily salt kills
+   cross-day linking — deliberately; within-day repeat visits are already countable). Three
+   paths, decided lean = (b) as opt-in, default OFF:
+   (a) monthly salt rotation — no device storage but a 30-day-stable pseudonymous hash;
+       grey under GDPR, dilutes the headline claim → rejected as default;
+   (b) a NON-identifying first-party marker (`first_seen: <month>` — a cohort value shared
+       by every same-month visitor, not an ID) → new-vs-returning % + retention cohorts with
+       zero personal data; the residual issue is ePrivacy device-storage: formally exempted
+       for first-party audience measurement in some markets (FR/IT style), consent-leaning
+       in others (DE) → ship as per-site opt-in with a plain-language market note;
+   (c) consent-gated precise metric for sites that already run a banner → post-MVP hook.
 
 ## 11. Status
 
