@@ -144,6 +144,26 @@ execution role**, so unlike VM-Poppy this poppy cannot be IAM-free. Same class a
 4. **Integrate** — the read-API token + endpoint, the table schema, copy-paste `curl` and
    Athena examples. (The founder's API story, made visible as a first-class screen.)
 
+## 7b. Team access — the browser dashboard (two-plane model)
+
+The poppy screen is the **admin plane** (behind the admin's AWS connection — desktop only).
+Organizations need colleagues to see reports **from a browser, without AgentsPoppy and
+without AWS credentials**. Solution = the MailPoppy admin/member split, reapplied:
+
+- The stack additionally serves a **read-only dashboard SPA** at the collector's own address
+  (`/dash`; on True Reach it becomes `stats.<company>.com/dash` — a premium-feeling URL).
+- **Viewer accounts = a Cognito user pool in the owner's account** (MailPoppy-proven
+  machinery: AdminCreateUser invites, EMAIL_ONLY self-service reset, revocation). The admin
+  manages viewers from the poppy; viewers log in with email/password in any browser.
+- The read API Lambda enforces **read-only scope server-side from the verified JWT**
+  (tenant-isolation lesson: never trust the client). Viewers can never touch AWS, sites
+  config, or teardown.
+- Everything — SPA, auth, data — stays in the owner's cloud; Cognito free tier ≈ $0.
+- **Pricing position: team access is FREE** (per-seat walls contradict the "per domain,
+  never per seat" heritage and the openness pitch). Public share links (per-site
+  anyone-with-the-link toggle) are the unauthenticated sibling, also free.
+- **Sequencing: first item after P5** — essential for org adoption, not for the solo-dev MVP.
+
 ## 8. Reuse from the existing poppies (do NOT reinvent)
 
 - **Deploy pipeline**: MailPoppy's asset-free CFN pattern — synthesized template + one
@@ -304,9 +324,15 @@ Manage billing); custom-domain flow (ACM DNS validation + CloudFront + Route53 �
 comparison report; script cutover default-URL → custom domain with zero data loss.
 *Acceptance: a paying owner sees blocked-traffic recovery and geography on their own subdomain.*
 
-**P6+ (backlog, ordered):** custom events + conversion goals · S3 rollups + Athena guide ·
-weekly SES email report · public share links · §10.6 cohort marker opt-in · §10.7 geo
-policy engine · Linux poppy packages if the container's Linux user base materializes.
+**P6 — Team access (first post-premium item; §7b).**
+Read-only browser dashboard SPA served by the stack + Cognito viewer accounts managed from
+the poppy + JWT-scoped read API. *Acceptance: a colleague with no AgentsPoppy and no AWS
+access reads live dashboards in a browser; the admin revokes them in one click.*
+
+**P7+ (backlog, ordered):** custom events + conversion goals · public share links ·
+S3 rollups + Athena guide · weekly SES email report · §10.6 cohort marker opt-in ·
+§10.7 geo policy engine · Linux poppy packages if the container's Linux user base
+materializes.
 
 ## 14. Status
 
