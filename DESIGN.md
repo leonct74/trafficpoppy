@@ -159,6 +159,16 @@ without AWS credentials**. Solution = the MailPoppy admin/member split, reapplie
   (tenant-isolation lesson: never trust the client). Viewers can never touch AWS, sites
   config, or teardown.
 - Everything — SPA, auth, data — stays in the owner's cloud; Cognito free tier ≈ $0.
+- **Per-site authorization (the agency case — founder requirement).** One pool, many sites,
+  different audiences per site: viewers carry **site grants as Cognito groups** (`site:<id>`
+  + an `all-sites` group), which appear in the verified JWT. Admin UI = email + site
+  checkboxes (or "all sites" for staff). The read API enforces grants **server-side from
+  claims** (403 on any ungranted site — the MailPoppy tenant-isolation discipline); the SPA
+  additionally hides ungranted sites entirely (client A never learns client B exists).
+  Product story this unlocks: an agency deploys once in ITS AWS, adds every client site,
+  and offers "private analytics included" — each client sees only their own dashboard; no
+  analytics vendor holds anyone's data. For agencies, True Reach's natural extension is
+  per-SITE custom domains (`stats.client-a.com`) — same single subscription.
 - **Pricing position: team access is FREE** (per-seat walls contradict the "per domain,
   never per seat" heritage and the openness pitch). Public share links (per-site
   anyone-with-the-link toggle) are the unauthenticated sibling, also free.
@@ -325,9 +335,11 @@ comparison report; script cutover default-URL → custom domain with zero data l
 *Acceptance: a paying owner sees blocked-traffic recovery and geography on their own subdomain.*
 
 **P6 — Team access (first post-premium item; §7b).**
-Read-only browser dashboard SPA served by the stack + Cognito viewer accounts managed from
-the poppy + JWT-scoped read API. *Acceptance: a colleague with no AgentsPoppy and no AWS
-access reads live dashboards in a browser; the admin revokes them in one click.*
+Read-only browser dashboard SPA served by the stack + Cognito viewer accounts with
+**per-site grants (groups-in-JWT)** managed from the poppy + claims-scoped read API.
+*Acceptance: a colleague with no AgentsPoppy and no AWS access reads live dashboards in a
+browser; a viewer granted site A gets 403 on site B and never sees B in the UI; the admin
+revokes per site in one click.*
 
 **P7+ (backlog, ordered):** custom events + conversion goals · public share links ·
 S3 rollups + Athena guide · weekly SES email report · §10.6 cohort marker opt-in ·
