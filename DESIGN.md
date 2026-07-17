@@ -69,8 +69,19 @@ visitor's browser ── GET /t.js ──────────► collector L
     the count of items = unique visitors; TTL expires rows after ~40 days (raw hash rows are
     the most privacy-sensitive thing we hold — they must age out; the *counter* survives).
 - **The sidecar backend** (Node SEA, MailPoppy pipeline) deploys/updates the stack (embedded
-  synthesized template + Lambda zip — the proven `backend-bundle.ts` approach), reads
-  aggregates for the dashboard, manages sites, runs teardown.
+  template + Lambda zip — the proven `backend-bundle.ts` approach), reads aggregates for the
+  dashboard, manages sites, runs teardown.
+  - **Implementation decision (P0): the template is hand-authored TypeScript, not cdk.**
+    MailPoppy's generator shells out to `cdk synth`; our footprint is one table now and a
+    table + Lambda + Function URL + role at P1 — small enough to author directly in
+    `infra/src/template.ts` (a pure builder), which drops the cdk dependency tree and the
+    synth step from the build. `scripts/build-backend-bundle.mjs` evaluates it to the same
+    asset-free template JSON the sidecar embeds; nothing downstream changes.
+  - **Implementation decision (P0): deploy via inline `TemplateBody`, no S3 deploy bucket
+    yet.** With the template passed inline and no Lambda zip until P1, **P0 creates nothing
+    outside its own stack** — so teardown is just DeleteStack and there's no out-of-stack
+    residue to sweep. The per-account deploy bucket arrives with P1's Lambda zip; at that
+    point it must be tagged and removed by the `/teardown` hook (it lives outside the stack).
 - **The poppy frontend** = dashboard + site management + the script-tag snippet with copy
   button (VM-Poppy's CopyButton pattern) + cost line.
 
@@ -352,4 +363,13 @@ materializes.
   founder (locked in §11); monetization decided (§12: free core + "True Reach" custom-domain
   subscription via AgentsPoppy checkout); phased plan in §13. Roadmap entry #8 in
   `agentspoppy/docs/ROADMAP.md` records the strategic rationale.
-- Next: **P0 walking skeleton** (scaffold → empty stack deploy → teardown → certify green).
+- 2026-07-18 — **P0 in progress.** Scaffold, manifest, template, sidecar and frontend all
+  built and unit-green (38 tests; typecheck clean). Manifest rating asserted in CI against
+  the REAL `assessPermissionSet`: **amber, both grants scoped, no risks to other resources**
+  — cloudformation scoped to `stack/TrafficPoppyStack/*`, dynamodb to `table/TrafficPoppy*`.
+  Two implementation decisions recorded in §2 (hand-authored template, no cdk; inline
+  TemplateBody, no deploy bucket in P0). Remaining P0 gate: dev-install + rating check in the
+  container, then a live deploy→teardown and `npm run certify` green — **pausing for founder
+  confirmation before the first AWS write.**
+- Next after P0: **P1 collector core** (t.js + POST /e Lambda, aggregation writes, daily-salt
+  uniques, site registry, per-site cap).
