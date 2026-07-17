@@ -1,0 +1,50 @@
+{
+  "id": "com.trafficpoppy.desktop",
+  "name": "TrafficPoppy",
+  "version": "0.1.0",
+  "description": "Privacy-first web analytics that run entirely in your own AWS — a 1 KB script tag, no cookies, no banners, and nobody in the data path but you.",
+  "icon": "frontend/trafficpoppy-icon.png",
+  "permissionSet": {
+    "id": "trafficpoppy-backend",
+    "name": "TrafficPoppy backend",
+    "description": "Deploys and removes its own CloudFormation stack (named TrafficPoppyStack) holding the analytics table it creates. Every change and delete is limited to resources named TrafficPoppy* — it cannot touch anything else in your account. No IAM, no account or organisation access.",
+    "requiredTags": ["agentspoppy:account", "agentspoppy:app", "agentspoppy:connection"],
+    "grants": [
+      {
+        "service": "cloudformation",
+        "actions": [
+          "CreateStack",
+          "UpdateStack",
+          "DeleteStack",
+          "DescribeStacks",
+          "DescribeStackEvents",
+          "DescribeStackResources"
+        ],
+        "resourceScope": "arn:aws:cloudformation:*:*:stack/TrafficPoppyStack/*"
+      },
+      {
+        "service": "dynamodb",
+        "actions": [
+          "CreateTable",
+          "DeleteTable",
+          "DescribeTable",
+          "TagResource",
+          "ListTagsOfResource"
+        ],
+        "resourceScope": "arn:aws:dynamodb:*:*:table/TrafficPoppy*"
+      }
+    ],
+    "limits": null
+  },
+  "frontend": {
+    "entry": "frontend/index.html"
+  },
+  "backend": {
+    "entry": "backend/trafficpoppy-sidecar",
+    "transport": "http"
+  },
+  "teardown": {
+    "endpoint": "/teardown"
+  },
+  "capabilities": ["aws:credentials", "connection:read", "backend:invoke"]
+}
