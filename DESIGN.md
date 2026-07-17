@@ -212,9 +212,106 @@ query strings are a privacy minefield; if kept, allowlist exactly `utm_source/me
    Nearest existing art is CMP geo-targeted consent banners + GA4's regional ad toggles —
    nobody does an in-analytics per-country policy engine.
 
-## 11. Status
+## 11. Decisions locked (founder, 2026-07-17)
 
-- 2026-07-17 — **Planning.** This DESIGN.md drafted; roadmap entry #8 in
-  `agentspoppy/docs/ROADMAP.md` records the strategic rationale. Next: founder review of the
-  open questions (§10) → scaffold repo (vm-poppy layout: `frontend/` + `backend/` + `infra/`
-  + `scripts/`) → walking skeleton (deploy an empty stack + teardown + certify) → collector.
+- **Name: TrafficPoppy** (`com.trafficpoppy.desktop`). §10.1 closed.
+- **utm allowlist**: exactly `utm_source/medium/campaign`, everything else dropped. §10.2.
+- **Abuse cap**: per-site daily write cap, ON by default, generous; dashboard warning when
+  tripped. §10.3.
+- **Teardown**: type-to-confirm offers "download your data as JSON first". §10.4.
+- **Site ids**: random short ids. §10.5.
+- **Returning visitors**: cohort-marker opt-in, default OFF (§10.6). **Geo policy engine**:
+  post-MVP, invariant floor (§10.7).
+- **Quality bar (founder)**: premium-quality data reports and premium look & feel — the
+  free tier must FEEL like a paid product. See P3 in the plan.
+
+## 12. Monetization (decided direction)
+
+**Free forever:** the entire core — unlimited sites, unlimited retention, full dashboard,
+read API/schema, teardown export. The user hosts their own data; charging for the basics
+would betray the BYO-cloud story and the marketplace's goodwill economics.
+
+**Premium = "True Reach" (one flagship feature, subscription):** the custom-domain tier.
+Deploys CloudFront + ACM certificate + Route53 record (`stats.<their-domain>`) in their AWS
+and moves collection first-party:
+
+1. **Ad-blocker-immune measurement** — blocklists can't enumerate the owner's own subdomain.
+   The dashboard makes the value visceral: a "True Reach" report showing measured traffic
+   vs. the blocker-suppressed baseline ("+X% you couldn't see before"). This is the moment
+   worth paying for.
+2. **Geography reports** (country/city) — only the CloudFront tier carries
+   `CloudFront-Viewer-Country`; structurally impossible in the free Function-URL tier, so
+   the gate is honest, not artificial.
+3. Later rides the same infra: the §10.7 jurisdiction policy engine.
+
+**Mechanics:** AgentsPoppy in-app checkout (first-party product, `kind=subscription`,
+owner's Stripe via the platform, flat 5% on processed sales; the standard purchase button
+ships the mandatory "Manage billing" control for free). Entitlement per deployment (all the
+owner's sites — simpler and more generous than per-site). Price target: **$5/month or
+$49/year** — visibly cheaper than Plausible/Fathom entry tiers while covering unlimited
+sites; the AWS costs (CloudFront/ACM ≈ cents) stay the owner's own. No external paywall or
+steering (marketplace rule); source stays open — the subscription gates entitlement, not
+secrecy (MailPoppy precedent).
+
+**Explicitly not monetized:** the read API / BI surface (it IS the openness pitch — §1.4),
+site counts, retention, or "advanced" cuts of the free reports.
+
+## 13. Development plan (phased; each phase ends green: typecheck + tests + certify where it applies)
+
+**P0 — Walking skeleton (the lifecycle before the product).**
+Scaffold vm-poppy layout (`frontend/ backend/ infra/ scripts/`); manifest + permissionSet
+(verify against the REAL assessor — substring trap); embedded-template deploy pipeline
+(MailPoppy `backend-bundle` pattern) deploying an EMPTY stack (table only); `/teardown`
+hook; `npm run certify` green on deploy→teardown; dev-install runs in AgentsPoppy.
+*Acceptance: stack up, stack gone, zero residue, poppy visible in the container.*
+
+**P1 — Collector core (data before pixels).**
+`t.js` (SPA-aware, GPC/DNT, utm allowlist) + `POST /e` on the Function URL Lambda;
+single-table aggregation writes (pure, unit-tested like mailbox.ts); daily-salt uniques w/
+TTL; site registry (random ids); per-site daily cap. Live-verify on a real deploy: script
+on a test page → counters correct → teardown.
+*Acceptance: real pageviews land as correct aggregates; salt rotates; cap trips.*
+
+**P2 — Dashboard MVP (the free tier exists).**
+Sites screen (add → snippet + CopyButton → receiving-state), dashboard v1 (today/7d/30d:
+views, uniques, top pages, referrers, browser/OS, viewport), empty states that teach,
+cost line (approx-labeled), design-kit skin + accent. Injectable clients; component tests.
+*Acceptance: a non-technical owner installs the snippet and reads real numbers unaided.*
+
+**P3 — Premium-quality reports & polish (the founder's quality bar).**
+- **Reports**: period-over-period comparisons (Δ% vs previous 7/30d), sparkline trends per
+  metric, "top movers" (pages/referrers rising & falling), hour-of-day heat strip, live
+  "last 30 minutes" ticker. All computed from the same counters — no new collection.
+- **Charts**: bundled, dependency-light (hand-rolled SVG or uPlot — NO CDN; sandboxed
+  webview). Consult the dataviz design method before the first chart: one visual system,
+  light/dark correct, accessible.
+- **Look & feel**: skeleton loading, animated count-ups, refined empty/error states, keyboard
+  nav; the bar is "screenshot-ready for the Store listing".
+- **Integrate screen**: API token, endpoint, schema doc, copy-paste curl + Athena examples.
+*Acceptance: side-by-side with Plausible, TrafficPoppy's dashboard looks and reads better.*
+
+**P4 — Hardening, dogfood, catalogue.**
+Retention TTLs verified live; abuse cap surfaced; `certify` full cycle re-run;
+**deploy on agentspoppy.com as the first production user** (dogfood + listing demo);
+pack darwin-arm64 + win32-x64 (day-one, pipeline exists); catalogue listing v0.1.0
+(icon, screenshots from the dogfood deployment).
+*Acceptance: agentspoppy.com's real traffic visible in the founder's AgentsPoppy.*
+
+**P5 — True Reach (the premium tier).**
+AgentsPoppy checkout integration (first-party product + entitlement + purchase button w/
+Manage billing); custom-domain flow (ACM DNS validation + CloudFront + Route53 — background
++ resumable, cert validation takes minutes); geo reports (country/city); the True Reach
+comparison report; script cutover default-URL → custom domain with zero data loss.
+*Acceptance: a paying owner sees blocked-traffic recovery and geography on their own subdomain.*
+
+**P6+ (backlog, ordered):** custom events + conversion goals · S3 rollups + Athena guide ·
+weekly SES email report · public share links · §10.6 cohort marker opt-in · §10.7 geo
+policy engine · Linux poppy packages if the container's Linux user base materializes.
+
+## 14. Status
+
+- 2026-07-17 — **Planning COMPLETE.** DESIGN.md drafted; §10 open questions answered by the
+  founder (locked in §11); monetization decided (§12: free core + "True Reach" custom-domain
+  subscription via AgentsPoppy checkout); phased plan in §13. Roadmap entry #8 in
+  `agentspoppy/docs/ROADMAP.md` records the strategic rationale.
+- Next: **P0 walking skeleton** (scaffold → empty stack deploy → teardown → certify green).
