@@ -199,6 +199,18 @@ query strings are a privacy minefield; if kept, allowlist exactly `utm_source/me
        for first-party audience measurement in some markets (FR/IT style), consent-leaning
        in others (DE) → ship as per-site opt-in with a plain-language market note;
    (c) consent-gated precise metric for sites that already run a banner → post-MVP hook.
+7. **Jurisdiction-aware policy engine (founder idea, post-MVP — no competitor has it).**
+   Per-visitor-country rules — but NOT "strict for EU, track the rest": (i) for EU-established
+   owners GDPR Art 3(1) covers ALL their processing regardless of visitor location, so
+   geo-switching only truly helps non-EU owners (Art 3(2) reaches only visitors in the EU);
+   (ii) the "no rules" map shrinks yearly (Thailand PDPA, Brazil LGPD, Japan APPI…).
+   Buildable version: the aggregates-only pipeline + daily salt stay an INVARIANT FLOOR
+   everywhere (the brand); geography gates only grey-zone opt-ins — e.g. the §10.6 cohort
+   marker auto-on in exempting markets (FR/IT class), off elsewhere (DE class). Needs visitor
+   country → free via CloudFront-Viewer-Country once the custom-domain tier ships (§9);
+   sequence after it. UI framing: owner is the controller; guidance, not legal advice.
+   Nearest existing art is CMP geo-targeted consent banners + GA4's regional ad toggles —
+   nobody does an in-analytics per-country policy engine.
 
 ## 11. Status
 
