@@ -1,0 +1,10 @@
+node_modules/
+dist/
+build/
+release/
+backend/build/
+backend/trafficpoppy-sidecar*
+*.exe
+*.tsbuildinfo
+.DS_Store
+src/generated/
