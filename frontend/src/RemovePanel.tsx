@@ -19,6 +19,8 @@ export function RemovePanel(props: { disabled?: boolean; onRemove: () => Promise
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const cancelRef = useRef<HTMLButtonElement>(null);
+  // Tolerate stray whitespace (e.g. an autocorrect trailing space) but require the exact word.
+  const matches = typed.trim() === CONFIRM_WORD;
 
   useEffect(() => {
     if (open) cancelRef.current?.focus();
@@ -73,15 +75,26 @@ export function RemovePanel(props: { disabled?: boolean; onRemove: () => Promise
             </p>
             <label className="field" style={{ margin: 0 }}>
               <span>
-                Type <strong>{CONFIRM_WORD}</strong> to confirm
+                To switch on the button below, type <strong>{CONFIRM_WORD}</strong> here:
               </span>
               <input
                 className="input"
                 value={typed}
                 onChange={(e) => setTyped(e.target.value)}
+                placeholder={CONFIRM_WORD}
                 autoComplete="off"
+                autoCapitalize="off"
                 spellCheck={false}
+                aria-label={`Type ${CONFIRM_WORD} to confirm`}
               />
+              {typed.length > 0 &&
+                (matches ? (
+                  <small style={{ color: "var(--poppy-ok)", fontSize: 12 }}>Match — the button is now on.</small>
+                ) : (
+                  <small className="muted" style={{ fontSize: 12 }}>
+                    Doesn't match yet — type <strong>{CONFIRM_WORD}</strong> exactly (capital T and P).
+                  </small>
+                ))}
             </label>
             {err && <div className="banner err">{err}</div>}
             <div className="row" style={{ justifyContent: "flex-end" }}>
@@ -90,13 +103,19 @@ export function RemovePanel(props: { disabled?: boolean; onRemove: () => Promise
               </button>
               <Button
                 className="btn btn-danger"
-                disabled={typed !== CONFIRM_WORD}
+                disabled={!matches}
                 busyLabel="Removing…"
+                title={matches ? undefined : `Type ${CONFIRM_WORD} above to switch this on`}
                 onClick={remove}
               >
                 Remove everything
               </Button>
             </div>
+            {!matches && !busy && (
+              <p className="muted" style={{ margin: 0, fontSize: 12, textAlign: "right" }}>
+                The button turns on once the name matches.
+              </p>
+            )}
             {busy && (
               <p className="muted" style={{ margin: 0, fontSize: 12 }}>
                 This can take a couple of minutes. It keeps going even if you leave this tab.

@@ -59,6 +59,40 @@ describe("removing TrafficPoppy takes a deliberate confirmation", () => {
     expect(screen.getByRole("button", { name: /remove…/i })).toBeDisabled();
   });
 
+  it("makes the type-to-enable requirement visible, with a live hint while typing", async () => {
+    render(<RemovePanel onRemove={vi.fn()} />);
+    await userEvent.click(screen.getByRole("button", { name: /remove…/i }));
+
+    // The requirement is stated, the field shows the word as its placeholder, and there's
+    // a standing note that the button turns on once the name matches.
+    expect(screen.getByPlaceholderText("TrafficPoppy")).toBeInTheDocument();
+    expect(screen.getByText(/turns on once the name matches/i)).toBeInTheDocument();
+
+    await userEvent.type(screen.getByRole("textbox"), "traffic");
+    expect(screen.getByText(/doesn't match yet/i)).toBeInTheDocument();
+
+    await userEvent.clear(screen.getByRole("textbox"));
+    await userEvent.type(screen.getByRole("textbox"), "TrafficPoppy");
+    expect(screen.getByText(/the button is now on/i)).toBeInTheDocument();
+  });
+
+  it("shows a spinner on the destroy button the moment teardown starts", async () => {
+    // The reported bug: the button looked unresponsive. It was disabled (name not typed);
+    // once enabled and clicked, it must spin for the whole (minutes-long) teardown.
+    let finish!: () => void;
+    const onRemove = vi.fn(() => new Promise<void>((r) => (finish = r)));
+    render(<RemovePanel onRemove={onRemove} />);
+    await userEvent.click(screen.getByRole("button", { name: /remove…/i }));
+    await userEvent.type(screen.getByRole("textbox"), "TrafficPoppy");
+
+    await userEvent.click(screen.getByRole("button", { name: /remove everything/i }));
+    const destroy = screen.getByRole("button", { name: /removing…/i });
+    expect(destroy).toHaveAttribute("aria-busy", "true");
+    expect(destroy).toBeDisabled();
+
+    finish();
+  });
+
   it("shows a failure calmly and keeps the dialog open so the user can retry", async () => {
     const onRemove = vi.fn().mockRejectedValue(new Error("AWS is not answering right now."));
     render(<RemovePanel onRemove={onRemove} />);
