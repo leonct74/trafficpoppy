@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { Button } from "./Button";
 
 /**
  * The scoped destructive control (AGENTS.md §4). Removing TrafficPoppy wipes its whole
@@ -87,9 +88,14 @@ export function RemovePanel(props: { disabled?: boolean; onRemove: () => Promise
               <button className="btn" ref={cancelRef} onClick={close} disabled={busy}>
                 Cancel
               </button>
-              <button className="btn btn-danger" disabled={typed !== CONFIRM_WORD || busy} onClick={() => void remove()}>
-                {busy ? "Removing…" : "Remove everything"}
-              </button>
+              <Button
+                className="btn btn-danger"
+                disabled={typed !== CONFIRM_WORD}
+                busyLabel="Removing…"
+                onClick={remove}
+              >
+                Remove everything
+              </Button>
             </div>
             {busy && (
               <p className="muted" style={{ margin: 0, fontSize: 12 }}>

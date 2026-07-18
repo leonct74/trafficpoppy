@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "./api";
+import { Button } from "./Button";
 import { host, type AccessState } from "./host";
 import { RemovePanel } from "./RemovePanel";
 import type { DeploymentStatus, Meta } from "./types";
@@ -17,7 +18,6 @@ export function App() {
   const [meta, setMeta] = useState<Meta | null>(null);
   const [status, setStatus] = useState<DeploymentStatus | null>(null);
   const [err, setErr] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
   const pollRef = useRef<number | null>(null);
 
@@ -85,16 +85,15 @@ export function App() {
     };
   }, [phase, status?.inProgress, refresh]);
 
+  // Returns the promise so the Button that triggered it stays spinning until AWS has
+  // accepted the request and we've read back the (now in-progress) live state.
   const deploy = async () => {
-    setBusy(true);
     setErr(null);
     try {
       await api.deploy();
       await refresh(); // picks up *_IN_PROGRESS, which starts the poller
     } catch (e) {
       setErr((e as Error).message);
-    } finally {
-      setBusy(false);
     }
   };
 
@@ -129,9 +128,9 @@ export function App() {
           )}
           {err && <div className="banner err">{err}</div>}
           <div>
-            <button className="btn btn-primary" onClick={() => void connect()}>
+            <Button className="btn btn-primary" busyLabel="Waiting for approval…" onClick={connect}>
               Connect my AWS account
-            </button>
+            </Button>
           </div>
         </div>
       </div>
@@ -157,9 +156,9 @@ export function App() {
             Nothing is running yet, so nothing is being billed.
           </p>
           <div>
-            <button className="btn btn-primary" disabled={busy} onClick={() => void deploy()}>
-              {busy ? "Starting…" : "Set up TrafficPoppy"}
-            </button>
+            <Button className="btn btn-primary" busyLabel="Starting…" onClick={deploy}>
+              Set up TrafficPoppy
+            </Button>
           </div>
         </div>
       )}
@@ -205,9 +204,9 @@ export function App() {
             </p>
           )}
           <div>
-            <button className="btn btn-primary" disabled={busy} onClick={() => void deploy()}>
+            <Button className="btn btn-primary" busyLabel="Starting…" onClick={deploy}>
               Try again
-            </button>
+            </Button>
           </div>
         </div>
       )}
