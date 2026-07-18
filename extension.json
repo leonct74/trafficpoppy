@@ -28,6 +28,8 @@
           "CreateTable",
           "DeleteTable",
           "DescribeTable",
+          "UpdateTimeToLive",
+          "DescribeTimeToLive",
           "TagResource",
           "ListTagsOfResource"
         ],

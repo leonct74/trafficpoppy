@@ -84,4 +84,16 @@ describe("the template stays in lockstep with the manifest's declared scope", ()
   it("does not cover a resource that isn't ours", () => {
     expect(covers(scopeOf("dynamodb"), "arn:aws:dynamodb:eu-west-1:123456789012:table/CustomerOrders")).toBe(false);
   });
+
+  it("grants the TTL permissions the template's TimeToLiveSpecification actually needs", () => {
+    // A live rollback taught us this: CloudFormation enables TTL with a separate
+    // UpdateTimeToLive call (read back with DescribeTimeToLive), so setting TTL in the
+    // template without granting these two creates the table then rolls the stack back.
+    const setsTtl = !!(table.Properties.TimeToLiveSpecification as { Enabled?: boolean } | undefined)?.Enabled;
+    const dynamoActions = manifest.permissionSet.grants.find((g) => g.service === "dynamodb")!.actions;
+    if (setsTtl) {
+      expect(dynamoActions).toContain("UpdateTimeToLive");
+      expect(dynamoActions).toContain("DescribeTimeToLive");
+    }
+  });
 });

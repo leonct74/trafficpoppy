@@ -62,6 +62,10 @@ export function buildTemplate(): CfnTemplate {
             { AttributeName: "pk", KeyType: "HASH" },
             { AttributeName: "sk", KeyType: "RANGE" },
           ],
+          // CloudFormation enables TTL with a SEPARATE dynamodb:UpdateTimeToLive call after
+          // CreateTable (and reads it back with DescribeTimeToLive) — so the manifest MUST
+          // grant both, or the stack creates the table then rolls back on AccessDenied. This
+          // only shows up on a live deploy; keep these two in lockstep with extension.json.
           TimeToLiveSpecification: { AttributeName: TTL_ATTRIBUTE, Enabled: true },
           // Deliberately absent: DeletionProtectionEnabled. CloudFormation cannot delete a
           // protected table, which would break leaves-no-trace (AGENTS.md §4).

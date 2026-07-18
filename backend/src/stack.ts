@@ -12,6 +12,7 @@
 import {
   CreateStackCommand,
   DeleteStackCommand,
+  DescribeStackEventsCommand,
   DescribeStacksCommand,
   UpdateStackCommand,
   waitUntilStackDeleteComplete,
@@ -37,6 +38,8 @@ export interface DeploymentStatus {
   inProgress: boolean;
   /** One calm sentence for the user when something went wrong. */
   message?: string;
+  /** The raw CloudFormation reason for a failure — for the technical details view. */
+  failureReason?: string;
   /** The template this deployment actually runs, vs. the one this build ships. */
   deployedTemplateKey?: string;
   currentTemplateKey: string;
@@ -92,6 +95,11 @@ export async function getStatus(cfn: CloudFormationClient, region: string): Prom
   const phase = phaseOf(stackStatus);
   const deployedTemplateKey = stack?.Tags?.find((t) => t.Key === TEMPLATE_KEY_TAG)?.Value;
 
+  // On a failure, pull the actual reason from the stack's events so the details view shows
+  // WHY (e.g. an AccessDenied on a specific action), not just "it rolled back". Best-effort
+  // and read-only — a permission gap here must never mask the failure itself.
+  const failureReason = phase === "failed" ? await firstFailureReason(cfn) : undefined;
+
   return {
     phase,
     stackStatus,
@@ -100,12 +108,37 @@ export async function getStatus(cfn: CloudFormationClient, region: string): Prom
     tableName: phase === "ready" ? tableName : undefined,
     inProgress: !!stackStatus && IN_PROGRESS.test(stackStatus),
     message: phase === "failed" ? failureMessage(stackStatus) : undefined,
+    failureReason,
     deployedTemplateKey,
     currentTemplateKey: templateKey,
     // Only meaningful once we know what's deployed; a stack from before this tag existed
     // reports no key and we don't nag about an update we can't substantiate.
     updateAvailable: !!deployedTemplateKey && deployedTemplateKey !== templateKey,
   };
+}
+
+/**
+ * The raw reason CloudFormation gives for the first resource that failed — the
+ * root-cause event, which the later CREATE_FAILED/ROLLBACK noise buries. Read-only,
+ * best-effort: any error (throttling, a missing DescribeStackEvents grant) yields
+ * undefined rather than masking the failure the user is already looking at.
+ */
+async function firstFailureReason(cfn: CloudFormationClient): Promise<string | undefined> {
+  try {
+    const out = await cfn.send(new DescribeStackEventsCommand({ StackName: stackName }));
+    // Events are newest-first; the earliest *_FAILED with a reason is the trigger. Ignore
+    // the boilerplate rollback reason CloudFormation stamps on the stack itself.
+    const failures = (out.StackEvents ?? []).filter(
+      (e) =>
+        e.ResourceStatus?.endsWith("_FAILED") &&
+        e.ResourceStatusReason &&
+        !/resource creation cancelled/i.test(e.ResourceStatusReason),
+    );
+    const root = failures[failures.length - 1];
+    return root?.ResourceStatusReason;
+  } catch {
+    return undefined;
+  }
 }
 
 function failureMessage(status: string | undefined): string {

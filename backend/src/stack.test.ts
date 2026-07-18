@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   CreateStackCommand,
   DeleteStackCommand,
+  DescribeStackEventsCommand,
   DescribeStacksCommand,
   UpdateStackCommand,
   type CloudFormationClient,
@@ -13,7 +14,7 @@ import { TAG_APP, TAG_ACCOUNT, TAG_CONNECTION } from "./tags";
 const ctx = { accountId: "111122223333", connectionId: "conn-1" };
 
 /** A CloudFormation whose DescribeStacks answers with the given statuses, in order. */
-function fakeCfn(script: { describe?: (unknown | Error)[]; onSend?: (cmd: unknown) => unknown }) {
+function fakeCfn(script: { describe?: (unknown | Error)[]; events?: unknown[]; onSend?: (cmd: unknown) => unknown }) {
   const sent: unknown[] = [];
   let i = 0;
   const client = {
@@ -24,7 +25,10 @@ function fakeCfn(script: { describe?: (unknown | Error)[]; onSend?: (cmd: unknow
         if (next instanceof Error) throw next;
         return next ?? { Stacks: [] };
       }
-      return script.onSend?.(cmd) ?? {};
+      const handled = script.onSend?.(cmd); // may throw (simulating AccessDenied) or override
+      if (handled !== undefined) return handled;
+      if (cmd instanceof DescribeStackEventsCommand) return { StackEvents: script.events ?? [] };
+      return {};
     }),
   } as unknown as CloudFormationClient;
   return { client, sent };
@@ -83,6 +87,39 @@ describe("getStatus — state comes from AWS, never from memory (AGENTS.md §5)"
     expect(s.message).toMatch(/try again/i);
     expect(s.message).not.toMatch(/ROLLBACK/);
     expect(s.stackStatus).toBe("ROLLBACK_COMPLETE"); // still available for the details view
+  });
+
+  it("surfaces the ROOT-CAUSE failure reason, not the rollback boilerplate that buries it", async () => {
+    // Events come back newest-first: the stack-level rollback and a cancellation on top, the
+    // real trigger (an AccessDenied) underneath. We want the trigger.
+    const { client } = fakeCfn({
+      describe: [stackWith("ROLLBACK_COMPLETE")],
+      events: [
+        { ResourceStatus: "ROLLBACK_COMPLETE", ResourceStatusReason: undefined },
+        { ResourceStatus: "CREATE_FAILED", ResourceStatusReason: "Resource creation cancelled" },
+        {
+          ResourceStatus: "CREATE_FAILED",
+          ResourceStatusReason:
+            "User is not authorized to perform: dynamodb:UpdateTimeToLive (AccessDenied)",
+        },
+      ],
+    });
+    const s = await getStatus(client, "eu-west-1");
+    expect(s.failureReason).toMatch(/UpdateTimeToLive/);
+    expect(s.message).toMatch(/try again/i); // the calm line stays for the user
+  });
+
+  it("still reports the failure calmly if the events can't be read", async () => {
+    const { client } = fakeCfn({
+      describe: [stackWith("ROLLBACK_COMPLETE")],
+      onSend: (cmd) => {
+        if (cmd instanceof DescribeStackEventsCommand) throw new Error("AccessDenied");
+        return {};
+      },
+    });
+    const s = await getStatus(client, "eu-west-1");
+    expect(s.phase).toBe("failed");
+    expect(s.failureReason).toBeUndefined();
   });
 
   it("spots a stack running an older template than this build ships", async () => {

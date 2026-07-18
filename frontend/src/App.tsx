@@ -199,6 +199,11 @@ export function App() {
       {phaseKey === "failed" && (
         <div className="card stack">
           <div className="banner err">{status?.message}</div>
+          {status?.failureReason && (
+            <p className="muted" style={{ margin: 0, fontSize: 12 }}>
+              What AWS reported: <span className="mono">{status.failureReason}</span>
+            </p>
+          )}
           <div>
             <button className="btn btn-primary" disabled={busy} onClick={() => void deploy()}>
               Try again

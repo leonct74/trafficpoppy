@@ -14,6 +14,8 @@ export interface DeploymentStatus {
   inProgress: boolean;
   /** One calm sentence, already written for the user by the backend. */
   message?: string;
+  /** The raw CloudFormation reason for a failure — shown in Technical details. */
+  failureReason?: string;
   deployedTemplateKey?: string;
   currentTemplateKey: string;
   updateAvailable: boolean;
