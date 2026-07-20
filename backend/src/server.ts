@@ -4,13 +4,21 @@
 
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { CloudFormationClient } from "@aws-sdk/client-cloudformation";
+import { S3Client } from "@aws-sdk/client-s3";
 import { readBootstrap, brokerCredentialsProvider } from "./boot";
-import { deploy, getStatus, teardown } from "./stack";
+import { deploy, getStatus, teardown, type AwsCtx } from "./stack";
 
 const boot = readBootstrap();
 const credentials = brokerCredentialsProvider(boot);
-const cfn = new CloudFormationClient({ region: boot.account.region, credentials });
-const ctx = { accountId: boot.account.accountId, connectionId: boot.connectionId };
+const region = boot.account.region;
+const aws: AwsCtx = {
+  cfn: new CloudFormationClient({ region, credentials }),
+  s3: new S3Client({ region, credentials }),
+  region,
+  accountId: boot.account.accountId,
+};
+/** Attribution for the stack (who created it) — separate from the AWS client context. */
+const attribution = { accountId: boot.account.accountId, connectionId: boot.connectionId };
 
 function json(res: ServerResponse, status: number, body: unknown): void {
   res.statusCode = status;
@@ -38,18 +46,18 @@ const server = createServer(async (req, res) => {
     // The live deployment state, read from CloudFormation on every call. The frontend
     // holds no memory of a deploy; this is what it mounts against and polls.
     if (method === "GET" && parts[0] === "status" && parts.length === 1) {
-      return json(res, 200, await getStatus(cfn, boot.account.region));
+      return json(res, 200, await getStatus(aws));
     }
 
     // Start (or update) the deploy. Returns as soon as AWS accepts it — the work carries
     // on in the background whatever the UI does.
     if (method === "POST" && parts[0] === "deploy" && parts.length === 1) {
-      return json(res, 200, await deploy(cfn, ctx));
+      return json(res, 200, await deploy(aws, attribution));
     }
 
     // The teardown hook the host POSTs at the start of teardown. MUST be idempotent.
     if (method === "POST" && parts[0] === "teardown" && parts.length === 1) {
-      return json(res, 200, { ok: true, ...(await teardown(cfn)) });
+      return json(res, 200, { ok: true, ...(await teardown(aws)) });
     }
 
     return json(res, 404, { error: `No route for ${method} /${parts.join("/")}` });

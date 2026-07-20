@@ -16,13 +16,35 @@ import {
   DescribeStacksCommand,
   UpdateStackCommand,
   waitUntilStackDeleteComplete,
+  type Capability,
   type CloudFormationClient,
   type Stack,
 } from "@aws-sdk/client-cloudformation";
-import { stackName, templateJson, templateKey, tableName, sourceCommit } from "./generated/backend-bundle";
-import { stackTags, TAG_SOURCE_COMMIT, type AttributionContext } from "./tags";
+import type { S3Client } from "@aws-sdk/client-s3";
+import {
+  stackName,
+  templateJson,
+  templateKey,
+  tableName,
+  lambdaCodeKey,
+  lambdaZipBase64,
+  sourceCommit,
+} from "./generated/backend-bundle";
+import { deployBucketName, ensureDeployBucket, uploadLambdaCode, deleteDeployBucket } from "./deploy-bucket";
+import { stackTags, type AttributionContext } from "./tags";
 
 export { stackName, tableName, templateKey };
+
+/** Everything the stack lifecycle needs to reach AWS. Clients injected → unit-testable. */
+export interface AwsCtx {
+  cfn: CloudFormationClient;
+  s3: S3Client;
+  region: string;
+  accountId: string;
+}
+
+/** The stack creates an IAM role, so CloudFormation needs these acknowledged. */
+const CAPABILITIES: Capability[] = ["CAPABILITY_NAMED_IAM"];
 
 /** How the UI should treat the stack right now — derived from AWS, never remembered. */
 export type DeploymentPhase = "none" | "deploying" | "ready" | "removing" | "failed";
@@ -44,6 +66,8 @@ export interface DeploymentStatus {
   deployedTemplateKey?: string;
   currentTemplateKey: string;
   updateAvailable: boolean;
+  /** The collector endpoint (Function URL) once the stack is up — the tracking script's origin. */
+  collectorUrl?: string;
 }
 
 export type StackOperation = "CREATE" | "UPDATE" | "NO_CHANGE" | "RECREATE";
@@ -89,11 +113,13 @@ function phaseOf(status: string | undefined): DeploymentPhase {
  * every mount and derives where the user is from what's really in their account, so
  * leaving mid-deploy and coming back lands on live progress rather than a dead spinner.
  */
-export async function getStatus(cfn: CloudFormationClient, region: string): Promise<DeploymentStatus> {
+export async function getStatus(ctx: AwsCtx): Promise<DeploymentStatus> {
+  const { cfn, region } = ctx;
   const stack = await describe(cfn, stackName);
   const stackStatus = stack?.StackStatus;
   const phase = phaseOf(stackStatus);
   const deployedTemplateKey = stack?.Tags?.find((t) => t.Key === TEMPLATE_KEY_TAG)?.Value;
+  const collectorUrl = stack?.Outputs?.find((o) => o.OutputKey === "CollectorUrl")?.OutputValue;
 
   // On a failure, pull the actual reason from the stack's events so the details view shows
   // WHY (e.g. an AccessDenied on a specific action), not just "it rolled back". Best-effort
@@ -114,6 +140,7 @@ export async function getStatus(cfn: CloudFormationClient, region: string): Prom
     // Only meaningful once we know what's deployed; a stack from before this tag existed
     // reports no key and we don't nag about an update we can't substantiate.
     updateAvailable: !!deployedTemplateKey && deployedTemplateKey !== templateKey,
+    collectorUrl: phase === "ready" ? collectorUrl : undefined,
   };
 }
 
@@ -157,20 +184,40 @@ export interface DeployResult {
 /**
  * Create or update the stack. Returns as soon as AWS accepts the request — the work runs
  * in the background (AGENTS.md §5); poll getStatus for completion.
+ *
+ * Before deploying we ensure the per-account deploy bucket exists and upload the collector's
+ * code zip to it (content-addressed key), then point the stack at it via parameters.
  */
-export async function deploy(
-  cfn: CloudFormationClient,
-  ctx: AttributionContext,
-): Promise<DeployResult> {
+export async function deploy(ctx: AwsCtx, attribution: AttributionContext): Promise<DeployResult> {
+  const { cfn, s3, region, accountId } = ctx;
   // The stack MUST carry attribution or AgentsPoppy can neither show nor tear down what
   // we made — so refuse rather than deploy an untrackable footprint.
-  if (!ctx.accountId || !ctx.connectionId) {
+  if (!attribution.accountId || !attribution.connectionId) {
     throw new Error(
       "TrafficPoppy isn't connected to your AWS account yet. Approve it in AgentsPoppy, then try again.",
     );
   }
-  const Tags = [...stackTags({ ...ctx, sourceCommit: sourceCommit || undefined }), { Key: TEMPLATE_KEY_TAG, Value: templateKey }];
-  const args = { StackName: stackName, TemplateBody: templateJson, Tags };
+
+  const attrTags = stackTags({ ...attribution, sourceCommit: sourceCommit || undefined });
+  const Tags = [...attrTags, { Key: TEMPLATE_KEY_TAG, Value: templateKey }];
+
+  // The deploy bucket is our one out-of-stack resource — tag it as ours so it's swept up,
+  // and upload the code the stack will reference.
+  const bucket = deployBucketName(accountId, region);
+  await ensureDeployBucket(s3, bucket, region, attrTags);
+  await uploadLambdaCode(s3, bucket, lambdaCodeKey, lambdaZipBase64);
+
+  const Parameters = [
+    { ParameterKey: "LambdaCodeBucket", ParameterValue: bucket },
+    { ParameterKey: "LambdaCodeKey", ParameterValue: lambdaCodeKey },
+  ];
+  const args = {
+    StackName: stackName,
+    TemplateBody: templateJson,
+    Parameters,
+    Capabilities: CAPABILITIES,
+    Tags,
+  };
 
   const existing = await describe(cfn, stackName);
   const status = existing?.StackStatus;
@@ -193,7 +240,7 @@ export async function deploy(
     await cfn.send(new UpdateStackCommand(args));
     return { operation: "UPDATE", stackName, templateKey };
   } catch (e) {
-    // Not an error: the account already runs exactly this template.
+    // Not an error: the account already runs exactly this template + code.
     if (/No updates are to be performed/i.test((e as Error).message ?? "")) {
       return { operation: "NO_CHANGE", stackName, templateKey };
     }
@@ -214,19 +261,29 @@ export interface TeardownResult {
  * MUST be idempotent: it can run more than once, including after a partial teardown, and
  * "already gone" is a success, not an error.
  *
- * P0 keeps the entire footprint inside the stack, so deleting the stack IS the complete
- * teardown. Anything we ever create outside it (the P1 deploy bucket) must be removed
- * here too.
+ * Two things to remove: the stack (table, Lambda, role, log group, Function URL — all
+ * in-stack, so DeleteStack handles them) and the deploy bucket, which lives OUTSIDE the
+ * stack and which the stack delete won't touch. We delete the bucket AFTER the stack is
+ * gone, so we never pull the Lambda code out from under an in-flight stack operation.
  */
-export async function teardown(cfn: CloudFormationClient): Promise<TeardownResult> {
-  const stack = await describe(cfn, stackName);
-  if (!stack) return { removed: [] };
+export async function teardown(ctx: AwsCtx): Promise<TeardownResult> {
+  const { cfn, s3, region, accountId } = ctx;
+  const removed: string[] = [];
 
-  if (stack.StackStatus !== "DELETE_IN_PROGRESS") {
-    await cfn.send(new DeleteStackCommand({ StackName: stackName }));
+  const stack = await describe(cfn, stackName);
+  if (stack) {
+    if (stack.StackStatus !== "DELETE_IN_PROGRESS") {
+      await cfn.send(new DeleteStackCommand({ StackName: stackName }));
+    }
+    // Wait for the delete to actually land: returning early would report success while the
+    // table still exists, and certification's tag sweep would (correctly) find it.
+    await waitUntilStackDeleteComplete({ client: cfn, maxWaitTime: 600 }, { StackName: stackName });
+    removed.push(stackName);
   }
-  // Wait for the delete to actually land: returning early would report success while the
-  // table still exists, and certification's tag sweep would (correctly) find it.
-  await waitUntilStackDeleteComplete({ client: cfn, maxWaitTime: 600 }, { StackName: stackName });
-  return { removed: [stackName] };
+
+  // The out-of-stack deploy bucket (idempotent — a missing bucket is success).
+  const bucket = deployBucketName(accountId, region);
+  if (await deleteDeployBucket(s3, bucket)) removed.push(bucket);
+
+  return { removed };
 }

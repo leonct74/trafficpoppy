@@ -7,7 +7,7 @@
   "permissionSet": {
     "id": "trafficpoppy-backend",
     "name": "TrafficPoppy backend",
-    "description": "Deploys and removes its own CloudFormation stack (named TrafficPoppyStack) holding the analytics table it creates. Every change and delete is limited to resources named TrafficPoppy* — it cannot touch anything else in your account. No IAM, no account or organisation access.",
+    "description": "Deploys and removes its own CloudFormation stack (named TrafficPoppyStack): a DynamoDB table, a collector Lambda behind a public URL, and a least-privilege execution role for that Lambda. Every change and delete is limited to resources named TrafficPoppy* (and a trafficpoppy-deploy-* code bucket) — it cannot touch anything else in your account. It creates one narrowly-scoped IAM role for its own Lambda; no account or organisation access.",
     "requiredTags": ["agentspoppy:account", "agentspoppy:app", "agentspoppy:connection"],
     "grants": [
       {
@@ -34,6 +34,58 @@
           "ListTagsOfResource"
         ],
         "resourceScope": "arn:aws:dynamodb:*:*:table/TrafficPoppy*"
+      },
+      {
+        "service": "lambda",
+        "actions": [
+          "CreateFunction",
+          "DeleteFunction",
+          "GetFunction",
+          "UpdateFunctionCode",
+          "UpdateFunctionConfiguration",
+          "CreateFunctionUrlConfig",
+          "DeleteFunctionUrlConfig",
+          "GetFunctionUrlConfig",
+          "AddPermission",
+          "RemovePermission",
+          "TagResource"
+        ],
+        "resourceScope": "arn:aws:lambda:*:*:function:TrafficPoppy*"
+      },
+      {
+        "service": "iam",
+        "actions": [
+          "CreateRole",
+          "DeleteRole",
+          "GetRole",
+          "PassRole",
+          "PutRolePolicy",
+          "DeleteRolePolicy",
+          "GetRolePolicy",
+          "TagRole"
+        ],
+        "resourceScope": "arn:aws:iam::*:role/TrafficPoppy*"
+      },
+      {
+        "service": "logs",
+        "actions": [
+          "CreateLogGroup",
+          "DeleteLogGroup",
+          "PutRetentionPolicy",
+          "DescribeLogGroups",
+          "TagResource"
+        ],
+        "resourceScope": "arn:aws:logs:*:*:log-group:/aws/lambda/TrafficPoppy*"
+      },
+      {
+        "service": "s3",
+        "actions": ["CreateBucket", "DeleteBucket", "ListBucket", "PutBucketTagging", "GetBucketLocation"],
+        "resourceScope": "arn:aws:s3:::trafficpoppy-deploy-*"
+      },
+      {
+        "service": "s3",
+        "actions": ["PutObject", "GetObject", "DeleteObject"],
+        "resourceScope": "arn:aws:s3:::trafficpoppy-deploy-*/*"
       }
     ],
     "limits": null
