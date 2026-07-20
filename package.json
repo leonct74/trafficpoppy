@@ -4,7 +4,7 @@
   "private": true,
   "description": "Privacy-first web analytics that run entirely in your own AWS — an AgentsPoppy extension.",
   "type": "module",
-  "license": "SEE LICENSE IN LICENSE",
+  "license": "MIT",
   "workspaces": [
     "infra",
     "lambdas",
