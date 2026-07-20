@@ -39,44 +39,48 @@ describe("the analytics table", () => {
 
 describe("the collector Lambda + its scoped role", () => {
   const R = template.Resources as Record<string, { Type: string; Properties: Record<string, any> }>;
+  const Collector = R.Collector!;
+  const CollectorUrl = R.CollectorUrl!;
+  const CollectorRole = R.CollectorRole!;
+  const CollectorLogGroup = R.CollectorLogGroup!;
 
   it("runs the collector.handler on a current Node runtime, code from the deploy bucket params", () => {
-    expect(R.Collector.Type).toBe("AWS::Lambda::Function");
-    expect(R.Collector.Properties.Handler).toBe("collector.handler");
-    expect(R.Collector.Properties.Runtime).toMatch(/^nodejs\d+\.x$/);
-    expect(R.Collector.Properties.Code).toEqual({
+    expect(Collector.Type).toBe("AWS::Lambda::Function");
+    expect(Collector.Properties.Handler).toBe("collector.handler");
+    expect(Collector.Properties.Runtime).toMatch(/^nodejs\d+\.x$/);
+    expect(Collector.Properties.Code).toEqual({
       S3Bucket: { Ref: "LambdaCodeBucket" },
       S3Key: { Ref: "LambdaCodeKey" },
     });
-    expect(R.Collector.Properties.Environment.Variables.TABLE_NAME).toEqual({ Ref: "TrafficTable" });
+    expect(Collector.Properties.Environment.Variables.TABLE_NAME).toEqual({ Ref: "TrafficTable" });
   });
 
   it("exposes a public Function URL (no API Gateway) with CORS", () => {
-    expect(R.CollectorUrl.Type).toBe("AWS::Lambda::Url");
-    expect(R.CollectorUrl.Properties.AuthType).toBe("NONE");
-    expect(R.CollectorUrl.Properties.Cors.AllowMethods).toEqual(["GET", "POST"]);
+    expect(CollectorUrl.Type).toBe("AWS::Lambda::Url");
+    expect(CollectorUrl.Properties.AuthType).toBe("NONE");
+    expect(CollectorUrl.Properties.Cors.AllowMethods).toEqual(["GET", "POST"]);
   });
 
   it("gives the Lambda a role that can reach ONLY its own table and log group (least privilege)", () => {
-    const stmts = R.CollectorRole.Properties.Policies[0].PolicyDocument.Statement;
+    const stmts = CollectorRole.Properties.Policies[0].PolicyDocument.Statement;
     const dynamo = stmts.find((s: any) => JSON.stringify(s.Action).includes("dynamodb"));
     // Scoped to the table's own ARN — never "*".
     expect(dynamo.Resource).toEqual({ "Fn::GetAtt": ["TrafficTable", "Arn"] });
     expect(dynamo.Action).not.toContain("dynamodb:DeleteTable"); // collector only reads/writes items
     // Trust policy limits assumption to Lambda.
-    expect(R.CollectorRole.Properties.AssumeRolePolicyDocument.Statement[0].Principal.Service).toBe(
+    expect(CollectorRole.Properties.AssumeRolePolicyDocument.Statement[0].Principal.Service).toBe(
       "lambda.amazonaws.com",
     );
   });
 
   it("carries its own name so the manifest's iam grant can scope to role/TrafficPoppy*", () => {
-    expect(R.CollectorRole.Properties.RoleName).toMatch(/^TrafficPoppy/);
-    expect(R.Collector.Properties.FunctionName).toMatch(/^TrafficPoppy/);
+    expect(CollectorRole.Properties.RoleName).toMatch(/^TrafficPoppy/);
+    expect(Collector.Properties.FunctionName).toMatch(/^TrafficPoppy/);
   });
 
   it("owns its log group in-stack (retention set, removed on teardown)", () => {
-    expect(R.CollectorLogGroup.Type).toBe("AWS::Logs::LogGroup");
-    expect(R.CollectorLogGroup.Properties.RetentionInDays).toBeGreaterThan(0);
+    expect(CollectorLogGroup.Type).toBe("AWS::Logs::LogGroup");
+    expect(CollectorLogGroup.Properties.RetentionInDays).toBeGreaterThan(0);
   });
 });
 

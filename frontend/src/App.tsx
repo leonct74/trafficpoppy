@@ -3,6 +3,7 @@ import { api } from "./api";
 import { Button } from "./Button";
 import { host, type AccessState } from "./host";
 import { RemovePanel } from "./RemovePanel";
+import { Sites } from "./Sites";
 import type { DeploymentStatus, Meta } from "./types";
 
 // Served from frontend/public → dist root; the same file the manifest declares as our icon.
@@ -177,22 +178,21 @@ export function App() {
       )}
 
       {phaseKey === "ready" && (
-        <div className="card stack">
-          <div className="spread">
-            <strong>TrafficPoppy is set up</strong>
-            <span className="badge ok">
-              <span className="dot" /> Ready
-            </span>
+        <>
+          <div className="card stack">
+            <div className="spread">
+              <strong>TrafficPoppy is set up</strong>
+              <span className="badge ok">
+                <span className="dot" /> Ready
+              </span>
+            </div>
+            <div className="banner info">
+              <strong>Running in your own AWS in {status?.region}.</strong> Serverless, so you're billed only
+              for what you actually collect — cents a month at typical traffic, nothing when nobody visits.
+            </div>
           </div>
-          <p className="muted" style={{ margin: 0 }}>
-            Your statistics storage is live in {status?.region}. Next comes the tracking snippet for your
-            website — that arrives in the next version.
-          </p>
-          <div className="banner info">
-            <strong>$0.00 so far — nothing is being billed.</strong> Storage costs only apply to what you
-            actually store and read, and no visitors have been counted yet.
-          </div>
-        </div>
+          {status?.collectorUrl && <Sites collectorUrl={status.collectorUrl} />}
+        </>
       )}
 
       {phaseKey === "failed" && (

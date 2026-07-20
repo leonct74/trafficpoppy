@@ -3,7 +3,7 @@
 // goes through the bridge.
 
 import { host } from "./host";
-import type { DeploymentStatus, Meta } from "./types";
+import type { DeploymentStatus, Meta, Site, SiteStats } from "./types";
 
 export const api = {
   meta: (): Promise<Meta> => host.invokeBackend({ method: "GET", path: "/meta" }),
@@ -18,4 +18,15 @@ export const api = {
   /** Removes everything TrafficPoppy created. Waits for AWS to finish. */
   teardown: (): Promise<{ ok: true; removed: string[] }> =>
     host.invokeBackend({ method: "POST", path: "/teardown" }, 15 * 60_000),
+
+  listSites: (): Promise<{ sites: Site[] }> => host.invokeBackend({ method: "GET", path: "/sites" }),
+
+  addSite: (name: string, domain: string): Promise<{ site: Site }> =>
+    host.invokeBackend({ method: "POST", path: "/sites", body: { name, domain } }),
+
+  removeSite: (id: string): Promise<{ ok: true }> =>
+    host.invokeBackend({ method: "DELETE", path: `/sites/${encodeURIComponent(id)}` }),
+
+  siteStats: (id: string): Promise<{ stats: SiteStats }> =>
+    host.invokeBackend({ method: "GET", path: `/sites/${encodeURIComponent(id)}/stats` }),
 };

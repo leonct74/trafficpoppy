@@ -19,9 +19,29 @@ export interface DeploymentStatus {
   deployedTemplateKey?: string;
   currentTemplateKey: string;
   updateAvailable: boolean;
+  /** The collector endpoint once the stack is up — the tracking script's origin. */
+  collectorUrl?: string;
 }
 
 export interface Meta {
   account: { accountId: string; region: string };
   connectionId: string;
+}
+
+export interface Site {
+  id: string;
+  name: string;
+  domain: string;
+  createdAt: string;
+}
+
+export interface SiteStats {
+  siteId: string;
+  day: string;
+  views: number;
+  uniques: number;
+  topPages: { key: string; count: number }[];
+  topReferrers: { key: string; count: number }[];
+  browsers: { key: string; count: number }[];
+  receiving: boolean;
 }

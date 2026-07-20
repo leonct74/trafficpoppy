@@ -31,7 +31,11 @@
           "UpdateTimeToLive",
           "DescribeTimeToLive",
           "TagResource",
-          "ListTagsOfResource"
+          "ListTagsOfResource",
+          "Query",
+          "GetItem",
+          "PutItem",
+          "DeleteItem"
         ],
         "resourceScope": "arn:aws:dynamodb:*:*:table/TrafficPoppy*"
       },

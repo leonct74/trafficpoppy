@@ -5,8 +5,10 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { CloudFormationClient } from "@aws-sdk/client-cloudformation";
 import { S3Client } from "@aws-sdk/client-s3";
+import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import { readBootstrap, brokerCredentialsProvider } from "./boot";
-import { deploy, getStatus, teardown, type AwsCtx } from "./stack";
+import { deploy, getStatus, teardown, tableName, type AwsCtx } from "./stack";
+import { SiteRegistry } from "./sites";
 
 const boot = readBootstrap();
 const credentials = brokerCredentialsProvider(boot);
@@ -17,6 +19,9 @@ const aws: AwsCtx = {
   region,
   accountId: boot.account.accountId,
 };
+const sites = new SiteRegistry(new DynamoDBClient({ region, credentials }), tableName);
+/** The current UTC day (YYYY-MM-DD) — the key the dashboard reads. */
+const today = () => new Date().toISOString().slice(0, 10);
 /** Attribution for the stack (who created it) — separate from the AWS client context. */
 const attribution = { accountId: boot.account.accountId, connectionId: boot.connectionId };
 
@@ -24,6 +29,17 @@ function json(res: ServerResponse, status: number, body: unknown): void {
   res.statusCode = status;
   res.setHeader("content-type", "application/json; charset=utf-8");
   res.end(JSON.stringify(body));
+}
+
+async function readBody(req: IncomingMessage): Promise<unknown> {
+  const chunks: Buffer[] = [];
+  for await (const c of req) chunks.push(c as Buffer);
+  if (chunks.length === 0) return undefined;
+  try {
+    return JSON.parse(Buffer.concat(chunks).toString("utf8"));
+  } catch {
+    return undefined;
+  }
 }
 
 /** One calm sentence for the UI — never a raw stack trace (AGENTS.md §9). */
@@ -53,6 +69,27 @@ const server = createServer(async (req, res) => {
     // on in the background whatever the UI does.
     if (method === "POST" && parts[0] === "deploy" && parts.length === 1) {
       return json(res, 200, await deploy(aws, attribution));
+    }
+
+    // Sites: the owner's site registry, stored in their own table.
+    if (parts[0] === "sites") {
+      if (method === "GET" && parts.length === 1) return json(res, 200, { sites: await sites.list() });
+      if (method === "POST" && parts.length === 1) {
+        const body = (await readBody(req)) as { name?: string; domain?: string } | undefined;
+        const site = await sites.create({ name: body?.name ?? "", domain: body?.domain ?? "" });
+        return json(res, 200, { site });
+      }
+      if (parts.length >= 2) {
+        const id = decodeURIComponent(parts[1]!);
+        if (method === "GET" && parts[2] === "stats") {
+          const day = url.searchParams.get("day") ?? today();
+          return json(res, 200, { stats: await sites.stats(id, day) });
+        }
+        if (method === "DELETE" && parts.length === 2) {
+          await sites.remove(id);
+          return json(res, 200, { ok: true });
+        }
+      }
     }
 
     // The teardown hook the host POSTs at the start of teardown. MUST be idempotent.
