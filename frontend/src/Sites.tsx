@@ -9,7 +9,7 @@ import type { Site, SiteStats } from "./types";
  * button → see whether data is arriving. `collectorUrl` is the deployed Function URL — the
  * origin baked into every snippet.
  */
-export function Sites(props: { collectorUrl: string }) {
+export function Sites(props: { collectorUrl: string; onOpen?: (site: Site) => void }) {
   const [sites, setSites] = useState<Site[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [name, setName] = useState("");
@@ -57,7 +57,7 @@ export function Sites(props: { collectorUrl: string }) {
       ) : (
         <div className="stack">
           {sites.map((s) => (
-            <SiteRow key={s.id} site={s} collectorUrl={props.collectorUrl} onRemoved={load} />
+            <SiteRow key={s.id} site={s} collectorUrl={props.collectorUrl} onRemoved={load} onOpen={props.onOpen} />
           ))}
         </div>
       )}
@@ -93,7 +93,12 @@ export function Sites(props: { collectorUrl: string }) {
   );
 }
 
-function SiteRow(props: { site: Site; collectorUrl: string; onRemoved: () => void }) {
+function SiteRow(props: {
+  site: Site;
+  collectorUrl: string;
+  onRemoved: () => void;
+  onOpen?: (site: Site) => void;
+}) {
   const { site, collectorUrl } = props;
   const origin = collectorUrl.replace(/\/+$/, "");
   const snippet = `<script defer src="${origin}/t.js" data-site="${site.id}"></script>`;
@@ -150,9 +155,16 @@ function SiteRow(props: { site: Site; collectorUrl: string; onRemoved: () => voi
       </div>
 
       {stats && stats.receiving && (
-        <div className="row" style={{ gap: 20 }}>
-          <Metric label="Views today" value={stats.views} />
-          <Metric label="Unique visitors" value={stats.uniques} />
+        <div className="spread">
+          <div className="row" style={{ gap: 20 }}>
+            <Metric label="Views today" value={stats.views} />
+            <Metric label="Unique visitors" value={stats.uniques} />
+          </div>
+          {props.onOpen && (
+            <button className="btn btn-primary btn-sm" onClick={() => props.onOpen?.(site)}>
+              Open dashboard →
+            </button>
+          )}
         </div>
       )}
 

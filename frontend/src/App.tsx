@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "./api";
 import { Button } from "./Button";
+import { Dashboard } from "./Dashboard";
 import { host, type AccessState } from "./host";
 import { RemovePanel } from "./RemovePanel";
 import { Sites } from "./Sites";
-import type { DeploymentStatus, Meta } from "./types";
+import type { DeploymentStatus, Meta, Site } from "./types";
 
 // Served from frontend/public → dist root; the same file the manifest declares as our icon.
 const icon = "./trafficpoppy-icon.png";
@@ -20,6 +21,8 @@ export function App() {
   const [status, setStatus] = useState<DeploymentStatus | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [showDetails, setShowDetails] = useState(false);
+  /** The site whose dashboard is open; null = the sites list. */
+  const [openSite, setOpenSite] = useState<Site | null>(null);
   const pollRef = useRef<number | null>(null);
 
   /**
@@ -177,7 +180,9 @@ export function App() {
         </div>
       )}
 
-      {phaseKey === "ready" && (
+      {phaseKey === "ready" && openSite && <Dashboard site={openSite} onBack={() => setOpenSite(null)} />}
+
+      {phaseKey === "ready" && !openSite && (
         <>
           <div className="card stack">
             <div className="spread">
@@ -191,7 +196,7 @@ export function App() {
               for what you actually collect — cents a month at typical traffic, nothing when nobody visits.
             </div>
           </div>
-          {status?.collectorUrl && <Sites collectorUrl={status.collectorUrl} />}
+          {status?.collectorUrl && <Sites collectorUrl={status.collectorUrl} onOpen={setOpenSite} />}
         </>
       )}
 
@@ -211,7 +216,7 @@ export function App() {
         </div>
       )}
 
-      {status && status.phase !== "none" && (
+      {status && status.phase !== "none" && !openSite && (
         <RemovePanel
           disabled={status.inProgress}
           onRemove={async () => {

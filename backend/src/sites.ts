@@ -96,8 +96,8 @@ export class SiteRegistry {
     );
   }
 
-  /** The dashboard read for one site + UTC day: one Query over the day partition. */
-  async stats(siteId: string, day: string): Promise<SiteStats> {
+  /** One Query over a single day partition → its raw counter rows. */
+  private async dayRows(siteId: string, day: string): Promise<{ sk: string; count: number }[]> {
     const out = await this.db.send(
       new QueryCommand({
         TableName: this.tableName,
@@ -105,7 +105,12 @@ export class SiteRegistry {
         ExpressionAttributeValues: { ":p": { S: `site#${siteId}#day#${day}` } },
       }),
     );
-    const rows = (out.Items ?? []).map((it) => ({ sk: it.sk?.S ?? "", count: Number(it.count?.N ?? "0") }));
+    return (out.Items ?? []).map((it) => ({ sk: it.sk?.S ?? "", count: Number(it.count?.N ?? "0") }));
+  }
+
+  /** The dashboard read for one site + UTC day: one Query over the day partition. */
+  async stats(siteId: string, day: string): Promise<SiteStats> {
+    const rows = await this.dayRows(siteId, day);
     const pick = (prefix: string) =>
       rows
         .filter((r) => r.sk.startsWith(prefix))
@@ -124,4 +129,74 @@ export class SiteRegistry {
       receiving: rows.length > 0,
     };
   }
+
+  /**
+   * The range read behind the dashboard (DESIGN.md §7.2): one Query per day, in parallel,
+   * merged in memory. Day partitions are small (one row per distinct counter), so even 30
+   * days is 30 cheap reads against the owner's own table.
+   *
+   * "uniques" over a range is the SUM OF DAILY UNIQUES — the only thing our privacy model
+   * can know: the daily salt is destroyed every 24 h, so cross-day identity cannot exist,
+   * by design (DESIGN.md §4). The UI labels it accordingly.
+   */
+  async rangeStats(siteId: string, days: string[]): Promise<RangeStats> {
+    const perDay = await Promise.all(days.map((d) => this.dayRows(siteId, d)));
+
+    const series: { day: string; views: number; uniques: number }[] = [];
+    const sums = new Map<string, number>();
+    for (let i = 0; i < days.length; i++) {
+      const rows = perDay[i]!;
+      const one = (sk: string) => rows.find((r) => r.sk === sk)?.count ?? 0;
+      series.push({ day: days[i]!, views: one("total#views"), uniques: one("total#uniques") });
+      for (const r of rows) sums.set(r.sk, (sums.get(r.sk) ?? 0) + r.count);
+    }
+
+    const pick = (prefix: string, limit: number) =>
+      [...sums.entries()]
+        .filter(([sk]) => sk.startsWith(prefix))
+        .map(([sk, count]) => ({ key: sk.slice(prefix.length), count }))
+        .sort((a, b) => b.count - a.count || a.key.localeCompare(b.key))
+        .slice(0, limit);
+
+    return {
+      siteId,
+      from: days[0] ?? "",
+      to: days[days.length - 1] ?? "",
+      days: series,
+      views: sums.get("total#views") ?? 0,
+      uniques: sums.get("total#uniques") ?? 0,
+      topPages: pick("page#", 10),
+      topReferrers: pick("ref#", 10),
+      browsers: pick("browser#", 8),
+      os: pick("os#", 8),
+      sizes: pick("size#", 8),
+      receiving: sums.size > 0,
+    };
+  }
+}
+
+/** What the dashboard renders for a picked range. Mirrored in frontend/src/types.ts. */
+export interface RangeStats {
+  siteId: string;
+  from: string;
+  to: string;
+  /** Per-day series, oldest first — powers the daily bars strip. */
+  days: { day: string; views: number; uniques: number }[];
+  views: number;
+  /** Sum of DAILY uniques — cross-day identity cannot exist (the salt is destroyed daily). */
+  uniques: number;
+  topPages: { key: string; count: number }[];
+  topReferrers: { key: string; count: number }[];
+  browsers: { key: string; count: number }[];
+  os: { key: string; count: number }[];
+  sizes: { key: string; count: number }[];
+  receiving: boolean;
+}
+
+/** The last `n` UTC days ending today, oldest first (n=1 ⇒ just today). */
+export function lastDays(n: number, today: string): string[] {
+  const end = new Date(`${today}T00:00:00Z`).getTime();
+  const out: string[] = [];
+  for (let i = n - 1; i >= 0; i--) out.push(new Date(end - i * 86_400_000).toISOString().slice(0, 10));
+  return out;
 }

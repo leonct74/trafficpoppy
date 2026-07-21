@@ -35,6 +35,24 @@ export interface Site {
   createdAt: string;
 }
 
+/** The dashboard's range read. Mirrors RangeStats in backend/src/sites.ts. */
+export interface RangeStats {
+  siteId: string;
+  from: string;
+  to: string;
+  /** Per-day series, oldest first. */
+  days: { day: string; views: number; uniques: number }[];
+  views: number;
+  /** Sum of DAILY uniques — cross-day identity cannot exist (the salt is destroyed daily). */
+  uniques: number;
+  topPages: { key: string; count: number }[];
+  topReferrers: { key: string; count: number }[];
+  browsers: { key: string; count: number }[];
+  os: { key: string; count: number }[];
+  sizes: { key: string; count: number }[];
+  receiving: boolean;
+}
+
 export interface SiteStats {
   siteId: string;
   day: string;

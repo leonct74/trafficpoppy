@@ -22,7 +22,7 @@ import {
 import { probeZipBase64 } from "./generated/backend-bundle";
 import { readBootstrap, brokerCredentialsProvider } from "./boot";
 import { deploy, getStatus, teardown, tableName, type AwsCtx } from "./stack";
-import { SiteRegistry } from "./sites";
+import { SiteRegistry, lastDays } from "./sites";
 
 const boot = readBootstrap();
 const credentials = brokerCredentialsProvider(boot);
@@ -110,6 +110,11 @@ const server = createServer(async (req, res) => {
         if (method === "GET" && parts[2] === "stats") {
           const day = url.searchParams.get("day") ?? today();
           return json(res, 200, { stats: await sites.stats(id, day) });
+        }
+        // The dashboard's range read: ?days=1|7|30 (clamped — each day is one Query).
+        if (method === "GET" && parts[2] === "range") {
+          const n = Math.min(90, Math.max(1, Number(url.searchParams.get("days") ?? "7") || 7));
+          return json(res, 200, { range: await sites.rangeStats(id, lastDays(n, today())) });
         }
         if (method === "DELETE" && parts.length === 2) {
           await sites.remove(id);

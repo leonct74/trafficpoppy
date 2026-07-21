@@ -5,7 +5,7 @@ import {
   QueryCommand,
   type DynamoDBClient,
 } from "@aws-sdk/client-dynamodb";
-import { newSiteId, SiteRegistry } from "./sites";
+import { lastDays, newSiteId, SiteRegistry } from "./sites";
 
 /** A DynamoDB whose Query returns the given items; records writes. */
 function fakeDb(queryItems: Record<string, { S?: string; N?: string }>[] = []) {
@@ -91,6 +91,76 @@ describe("SiteRegistry.stats — the dashboard read (one Query per day)", () => 
     const s = await reg(client).stats("site1", "2026-07-18");
     expect(s.receiving).toBe(false);
     expect(s.views).toBe(0);
+  });
+});
+
+describe("SiteRegistry.rangeStats — the dashboard's range read", () => {
+  /** A db whose Query answers per day-partition key. */
+  function dbByDay(byDay: Record<string, { sk: string; count: number }[]>) {
+    return {
+      send: vi.fn(async (cmd: any) => {
+        const pk: string = cmd.input.ExpressionAttributeValues[":p"].S;
+        const day = pk.split("#day#")[1] ?? "";
+        const rows = byDay[day] ?? [];
+        return { Items: rows.map((r) => ({ sk: { S: r.sk }, count: { N: String(r.count) } })) };
+      }),
+    } as unknown as DynamoDBClient;
+  }
+
+  it("merges day partitions: summed totals, a per-day series, ranked breakdowns", async () => {
+    const db = dbByDay({
+      "2026-07-17": [
+        { sk: "total#views", count: 3 },
+        { sk: "total#uniques", count: 2 },
+        { sk: "page#/", count: 2 },
+        { sk: "page#/about", count: 1 },
+        { sk: "browser#Chrome", count: 3 },
+        { sk: "os#macOS", count: 3 },
+        { sk: "size#desktop", count: 3 },
+      ],
+      "2026-07-18": [
+        { sk: "total#views", count: 5 },
+        { sk: "total#uniques", count: 4 },
+        { sk: "page#/", count: 5 },
+        { sk: "ref#news.ycombinator.com", count: 2 },
+        { sk: "browser#Firefox", count: 5 },
+        { sk: "os#Windows", count: 5 },
+        { sk: "size#mobile", count: 5 },
+      ],
+    });
+    const r = await reg(db).rangeStats("s1", ["2026-07-17", "2026-07-18"]);
+
+    expect(r.views).toBe(8);
+    expect(r.uniques).toBe(6); // sum of DAILY uniques — cross-day identity cannot exist
+    expect(r.days).toEqual([
+      { day: "2026-07-17", views: 3, uniques: 2 },
+      { day: "2026-07-18", views: 5, uniques: 4 },
+    ]);
+    expect(r.topPages[0]).toEqual({ key: "/", count: 7 }); // merged across days
+    expect(r.topReferrers).toEqual([{ key: "news.ycombinator.com", count: 2 }]);
+    expect(r.os.map((o) => o.key)).toEqual(["Windows", "macOS"]);
+    expect(r.sizes.map((s) => s.key)).toEqual(["mobile", "desktop"]);
+    expect(r.receiving).toBe(true);
+    expect(r.from).toBe("2026-07-17");
+    expect(r.to).toBe("2026-07-18");
+  });
+
+  it("reports an empty range as not-receiving (powers the teach-the-snippet empty state)", async () => {
+    const r = await reg(dbByDay({})).rangeStats("s1", ["2026-07-17", "2026-07-18"]);
+    expect(r.receiving).toBe(false);
+    expect(r.views).toBe(0);
+    expect(r.days).toHaveLength(2); // series still covers the whole range, zero-filled
+  });
+});
+
+describe("lastDays", () => {
+  it("returns the last n UTC days ending today, oldest first", () => {
+    expect(lastDays(3, "2026-07-18")).toEqual(["2026-07-16", "2026-07-17", "2026-07-18"]);
+    expect(lastDays(1, "2026-07-18")).toEqual(["2026-07-18"]);
+  });
+
+  it("crosses month boundaries correctly", () => {
+    expect(lastDays(2, "2026-08-01")).toEqual(["2026-07-31", "2026-08-01"]);
   });
 });
 
