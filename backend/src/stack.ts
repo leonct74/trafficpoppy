@@ -120,6 +120,10 @@ export async function getStatus(ctx: AwsCtx): Promise<DeploymentStatus> {
   const stackStatus = stack?.StackStatus;
   const phase = phaseOf(stackStatus);
   const deployedTemplateKey = stack?.Tags?.find((t) => t.Key === TEMPLATE_KEY_TAG)?.Value;
+  // The deployed collector-code key rides as a stack PARAMETER — a code-only change moves
+  // it while the template key stays put, so updateAvailable must watch both. (Live lesson:
+  // the CORS-fix release was code-only and the UI couldn't see the pending update.)
+  const deployedCodeKey = stack?.Parameters?.find((p) => p.ParameterKey === "LambdaCodeKey")?.ParameterValue;
   const collectorUrl = stack?.Outputs?.find((o) => o.OutputKey === "CollectorUrl")?.OutputValue;
 
   // On a failure, pull the actual reason from the stack's events so the details view shows
@@ -140,7 +144,9 @@ export async function getStatus(ctx: AwsCtx): Promise<DeploymentStatus> {
     currentTemplateKey: templateKey,
     // Only meaningful once we know what's deployed; a stack from before this tag existed
     // reports no key and we don't nag about an update we can't substantiate.
-    updateAvailable: !!deployedTemplateKey && deployedTemplateKey !== templateKey,
+    updateAvailable:
+      (!!deployedTemplateKey && deployedTemplateKey !== templateKey) ||
+      (!!deployedCodeKey && deployedCodeKey !== lambdaCodeKey),
     collectorUrl: phase === "ready" ? collectorUrl : undefined,
   };
 }

@@ -9,7 +9,7 @@ import {
   type CloudFormationClient,
 } from "@aws-sdk/client-cloudformation";
 import { deploy, getStatus, teardown, TEMPLATE_KEY_TAG, type AwsCtx } from "./stack";
-import { templateKey } from "./generated/backend-bundle";
+import { lambdaCodeKey, templateKey } from "./generated/backend-bundle";
 import { TAG_APP, TAG_ACCOUNT, TAG_CONNECTION } from "./tags";
 import type { S3Client } from "@aws-sdk/client-s3";
 
@@ -164,6 +164,34 @@ describe("getStatus — state comes from AWS, never from memory (AGENTS.md §5)"
       describe: [stackWith("CREATE_COMPLETE", [{ Key: TEMPLATE_KEY_TAG, Value: templateKey }])],
     });
     expect((await getStatus(awsCtx(client))).updateAvailable).toBe(false);
+  });
+
+  it("spots a CODE-only update — same template, different collector zip", async () => {
+    // Live lesson: the CORS-fix release changed only the Lambda zip; template-key
+    // comparison alone reported updateAvailable=false and the UI couldn't offer it.
+    const stale = {
+      Stacks: [
+        {
+          StackStatus: "CREATE_COMPLETE",
+          Tags: [{ Key: TEMPLATE_KEY_TAG, Value: templateKey }],
+          Parameters: [{ ParameterKey: "LambdaCodeKey", ParameterValue: "collector-0ldc0de.zip" }],
+        },
+      ],
+    };
+    const { client } = fakeCfn({ describe: [stale] });
+    expect((await getStatus(awsCtx(client))).updateAvailable).toBe(true);
+
+    const current = {
+      Stacks: [
+        {
+          StackStatus: "CREATE_COMPLETE",
+          Tags: [{ Key: TEMPLATE_KEY_TAG, Value: templateKey }],
+          Parameters: [{ ParameterKey: "LambdaCodeKey", ParameterValue: lambdaCodeKey }],
+        },
+      ],
+    };
+    const { client: client2 } = fakeCfn({ describe: [current] });
+    expect((await getStatus(awsCtx(client2))).updateAvailable).toBe(false);
   });
 });
 
