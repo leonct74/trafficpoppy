@@ -124,7 +124,7 @@ describe("Dashboard", () => {
   it("goes back to the sites list", async () => {
     const onBack = vi.fn();
     render(<Dashboard site={site} onBack={onBack} />);
-    await userEvent.click(await screen.findByRole("button", { name: /all sites/i }));
+    await userEvent.click(await screen.findByRole("button", { name: /back to your sites/i }));
     expect(onBack).toHaveBeenCalled();
   });
 });

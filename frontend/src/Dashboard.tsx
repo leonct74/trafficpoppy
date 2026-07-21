@@ -86,10 +86,13 @@ export function Dashboard(props: { site: Site; onBack: () => void }) {
   return (
     <div className="stack">
       <div className="card stack">
-        <div className="spread">
+        <div className="spread" style={{ flexWrap: "wrap", gap: 10 }}>
           <div className="row">
-            <button className="btn btn-ghost btn-sm" onClick={props.onBack}>
-              ← All sites
+            {/* The way back to the sites list (add/manage other websites) — a REAL bordered
+                button: as a ghost button it was invisible enough that the founder reported
+                it missing. */}
+            <button className="btn btn-sm" onClick={props.onBack} aria-label="Back to your sites">
+              ← Your sites
             </button>
             <div>
               <strong>{site.name}</strong>{" "}
@@ -100,7 +103,7 @@ export function Dashboard(props: { site: Site; onBack: () => void }) {
               )}
             </div>
           </div>
-          <div className="row">
+          <div className="row" style={{ flexWrap: "wrap" }}>
             <LivePulse live={live} />
             <div className="tabs" role="tablist" aria-label="Time range">
               {RANGES.map((r) => (
