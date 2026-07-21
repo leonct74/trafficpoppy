@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "./api";
 import { Button } from "./Button";
 import { Dashboard } from "./Dashboard";
+import { Integrate } from "./Integrate";
 import { host, type AccessState } from "./host";
 import { RemovePanel } from "./RemovePanel";
 import { Sites } from "./Sites";
@@ -23,6 +24,8 @@ export function App() {
   const [showDetails, setShowDetails] = useState(false);
   /** The site whose dashboard is open; null = the sites list. */
   const [openSite, setOpenSite] = useState<Site | null>(null);
+  /** Within an open site: the Integrate (use-your-data) screen instead of the dashboard. */
+  const [integrating, setIntegrating] = useState(false);
   const pollRef = useRef<number | null>(null);
 
   /**
@@ -180,7 +183,25 @@ export function App() {
         </div>
       )}
 
-      {phaseKey === "ready" && openSite && <Dashboard site={openSite} onBack={() => setOpenSite(null)} />}
+      {phaseKey === "ready" && openSite && integrating && (
+        <Integrate
+          site={openSite}
+          region={status?.region ?? ""}
+          tableName={status?.tableName ?? "TrafficPoppyData"}
+          onBack={() => setIntegrating(false)}
+        />
+      )}
+
+      {phaseKey === "ready" && openSite && !integrating && (
+        <Dashboard
+          site={openSite}
+          onBack={() => {
+            setOpenSite(null);
+            setIntegrating(false); // never re-enter another site's view mid-Integrate
+          }}
+          onIntegrate={() => setIntegrating(true)}
+        />
+      )}
 
       {phaseKey === "ready" && !openSite && (
         <>

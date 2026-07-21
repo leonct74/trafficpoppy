@@ -21,7 +21,7 @@ const RANGES = [
 const POLL_MS = 30_000;
 const LIVE_POLL_MS = 10_000;
 
-export function Dashboard(props: { site: Site; onBack: () => void }) {
+export function Dashboard(props: { site: Site; onBack: () => void; onIntegrate?: () => void }) {
   const { site } = props;
   const [days, setDays] = useState<number>(7);
   const [range, setRange] = useState<RangeStats | null>(null);
@@ -104,6 +104,11 @@ export function Dashboard(props: { site: Site; onBack: () => void }) {
             </div>
           </div>
           <div className="row" style={{ flexWrap: "wrap" }}>
+            {props.onIntegrate && (
+              <button className="btn btn-ghost btn-sm" onClick={props.onIntegrate} title="Query this data with your own tools">
+                Integrate
+              </button>
+            )}
             <LivePulse live={live} />
             <div className="tabs" role="tablist" aria-label="Time range">
               {RANGES.map((r) => (
