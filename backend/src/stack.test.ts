@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  ContinueUpdateRollbackCommand,
   CreateStackCommand,
   DeleteStackCommand,
   DescribeStackEventsCommand,
@@ -227,6 +228,26 @@ describe("deploy", () => {
     expect(r.operation).toBe("RECREATE");
     expect(sent.find((c) => c instanceof DeleteStackCommand)).toBeDefined();
     expect(sent.find((c) => c instanceof CreateStackCommand)).toBeDefined();
+  });
+
+  it("recovers UPDATE_ROLLBACK_FAILED by continuing the rollback — NEVER by deleting", async () => {
+    // Deleting here would destroy the Function URL and invalidate every installed snippet.
+    const { client, sent } = fakeCfn({
+      describe: [stackWith("UPDATE_ROLLBACK_FAILED"), stackWith("UPDATE_ROLLBACK_COMPLETE")],
+    });
+    const r = await deploy(awsCtx(client), attribution);
+    expect(r.operation).toBe("UPDATE");
+    expect(sent.find((c) => c instanceof ContinueUpdateRollbackCommand)).toBeDefined();
+    expect(sent.find((c) => c instanceof UpdateStackCommand)).toBeDefined();
+    expect(sent.find((c) => c instanceof DeleteStackCommand)).toBeUndefined();
+  });
+
+  it("reports a rollback that STAYS stuck instead of piling an update on top", async () => {
+    const { client, sent } = fakeCfn({
+      describe: [stackWith("UPDATE_ROLLBACK_FAILED"), stackWith("UPDATE_ROLLBACK_FAILED")],
+    });
+    await expect(deploy(awsCtx(client), attribution)).rejects.toThrow(/rolled back/i);
+    expect(sent.find((c) => c instanceof UpdateStackCommand)).toBeUndefined();
   });
 
   it("lets a real AWS failure surface rather than swallowing it", async () => {

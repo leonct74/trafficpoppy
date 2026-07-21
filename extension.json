@@ -15,6 +15,7 @@
         "actions": [
           "CreateStack",
           "UpdateStack",
+          "ContinueUpdateRollback",
           "DeleteStack",
           "DescribeStacks",
           "DescribeStackEvents",
@@ -53,7 +54,8 @@
           "AddPermission",
           "RemovePermission",
           "GetPolicy",
-          "TagResource"
+          "TagResource",
+          "ListTags"
         ],
         "resourceScope": "arn:aws:lambda:*:*:function:TrafficPoppy*"
       },
@@ -67,13 +69,14 @@
           "PutRolePolicy",
           "DeleteRolePolicy",
           "GetRolePolicy",
-          "TagRole"
+          "TagRole",
+          "ListRoleTags"
         ],
         "resourceScope": "arn:aws:iam::*:role/TrafficPoppy*"
       },
       {
         "service": "logs",
-        "actions": ["CreateLogGroup", "DeleteLogGroup", "PutRetentionPolicy", "TagResource"],
+        "actions": ["CreateLogGroup", "DeleteLogGroup", "PutRetentionPolicy", "TagResource", "ListTagsForResource"],
         "resourceScope": "arn:aws:logs:*:*:log-group:/aws/lambda/TrafficPoppy*"
       },
       {

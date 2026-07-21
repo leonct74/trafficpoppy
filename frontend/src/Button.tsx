@@ -26,8 +26,10 @@ export function Button({ onClick, busyLabel, children, disabled, ...rest }: Butt
     if (result instanceof Promise) {
       setBusy(true);
       // Always clear busy, even if the handler rejects — the caller surfaces the error;
-      // the button must never be left spinning forever.
-      void result.finally(() => setBusy(false));
+      // the button must never be left spinning forever. The rejection is swallowed HERE:
+      // handlers own their error UI, and re-surfacing it would make every failed action
+      // an unhandled-rejection console error.
+      void result.catch(() => {}).finally(() => setBusy(false));
     }
   };
 

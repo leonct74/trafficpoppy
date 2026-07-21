@@ -154,6 +154,20 @@ describe("the template stays in lockstep with the manifest's declared scope", ()
     expect(covers(scopeOf("dynamodb"), "arn:aws:dynamodb:eu-west-1:123456789012:table/CustomerOrders")).toBe(false);
   });
 
+  it("grants the tag-READ actions a stack UPDATE needs on every taggable resource", () => {
+    // Live lesson (the UPDATE_ROLLBACK_FAILED incident): every deploy changes a stack-level
+    // tag (trafficpoppy:templateKey), which makes CloudFormation reconcile tags on EVERY
+    // resource — and each handler READS existing tags before writing. A missing read fails
+    // the update AND its rollback with UnauthorizedTaggingOperation, stranding the stack.
+    const actionsOf = (svc: string) => manifest.permissionSet.grants.find((g) => g.service === svc)!.actions;
+    expect(actionsOf("logs")).toContain("ListTagsForResource");
+    expect(actionsOf("lambda")).toContain("ListTags");
+    expect(actionsOf("iam")).toContain("ListRoleTags");
+    expect(actionsOf("dynamodb")).toContain("ListTagsOfResource");
+    // And the only exit from UPDATE_ROLLBACK_FAILED that keeps the Function URL alive:
+    expect(actionsOf("cloudformation")).toContain("ContinueUpdateRollback");
+  });
+
   it("grants the TTL permissions the template's TimeToLiveSpecification actually needs", () => {
     // A live rollback taught us this: CloudFormation enables TTL with a separate
     // UpdateTimeToLive call (read back with DescribeTimeToLive), so setting TTL in the

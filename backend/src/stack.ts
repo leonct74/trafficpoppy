@@ -10,6 +10,7 @@
 // unit-testable without touching AWS.
 
 import {
+  ContinueUpdateRollbackCommand,
   CreateStackCommand,
   DeleteStackCommand,
   DescribeStackEventsCommand,
@@ -236,6 +237,20 @@ export async function deploy(ctx: AwsCtx, attribution: AttributionContext): Prom
     return { operation: "CREATE", stackName, templateKey };
   }
 
+  // A failed update whose rollback ALSO failed strands the stack: it can only leave
+  // UPDATE_ROLLBACK_FAILED via ContinueUpdateRollback — or a delete, which would destroy
+  // the Function URL and silently invalidate every snippet site owners have installed.
+  // So: finish the rollback, then run the update as normal. (Live lesson: a permission
+  // gap that fails the update usually fails the rollback identically, so this branch only
+  // succeeds AFTER the gap itself is fixed.)
+  if (status === "UPDATE_ROLLBACK_FAILED") {
+    await cfn.send(new ContinueUpdateRollbackCommand({ StackName: stackName }));
+    const settled = await waitUntilRollbackSettles(cfn);
+    if (settled !== "UPDATE_ROLLBACK_COMPLETE") {
+      throw new Error(`The previous change could not be rolled back (stack is ${settled}).`);
+    }
+  }
+
   try {
     await cfn.send(new UpdateStackCommand(args));
     return { operation: "UPDATE", stackName, templateKey };
@@ -246,6 +261,17 @@ export async function deploy(ctx: AwsCtx, attribution: AttributionContext): Prom
     }
     throw e;
   }
+}
+
+/** Poll until a continued rollback stops being in-progress; returns the final status. */
+async function waitUntilRollbackSettles(cfn: CloudFormationClient): Promise<string> {
+  for (let i = 0; i < 60; i++) {
+    const stack = await describe(cfn, stackName);
+    const status = stack?.StackStatus ?? "";
+    if (!IN_PROGRESS.test(status)) return status;
+    await new Promise((r) => setTimeout(r, 5000));
+  }
+  throw new Error("Timed out waiting for the previous change to finish rolling back.");
 }
 
 export interface TeardownResult {
