@@ -115,7 +115,14 @@ export function buildTemplate(): CfnTemplate {
                   {
                     Effect: "Allow",
                     Action: ["logs:CreateLogStream", "logs:PutLogEvents"],
-                    Resource: { "Fn::GetAtt": ["CollectorLogGroup", "Arn"] },
+                    // Construct the log-group ARN by name rather than Fn::GetAtt on the
+                    // LogGroup: resolving a LogGroup's Arn attribute makes CloudFormation call
+                    // logs:DescribeLogGroups on that group, and DescribeLogGroups can't be
+                    // scoped to a single group in a session policy — so the deploy is denied.
+                    // Building the ARN with Fn::Sub needs no read-back. (Live-deploy lesson.)
+                    Resource: {
+                      "Fn::Sub": `arn:aws:logs:\${AWS::Region}:\${AWS::AccountId}:log-group:/aws/lambda/${FUNCTION_NAME}:*`,
+                    },
                   },
                 ],
               },

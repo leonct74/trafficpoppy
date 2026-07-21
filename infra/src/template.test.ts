@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { buildTemplate, STACK_NAME, TABLE_NAME, TTL_ATTRIBUTE } from "./template";
+import { buildTemplate, FUNCTION_NAME, STACK_NAME, TABLE_NAME, TTL_ATTRIBUTE } from "./template";
 
 const template = buildTemplate();
 const table = template.Resources.TrafficTable as {
@@ -71,6 +71,15 @@ describe("the collector Lambda + its scoped role", () => {
     expect(CollectorRole.Properties.AssumeRolePolicyDocument.Statement[0].Principal.Service).toBe(
       "lambda.amazonaws.com",
     );
+  });
+
+  it("builds the log-group ARN by name (Fn::Sub), never Fn::GetAtt on the LogGroup", () => {
+    // Live-deploy lesson: GetAtt on a LogGroup Arn makes CloudFormation call
+    // logs:DescribeLogGroups (which can't be scoped in a session policy) → deploy denied.
+    const stmts = CollectorRole.Properties.Policies[0].PolicyDocument.Statement;
+    const logs = stmts.find((s: any) => JSON.stringify(s.Action).includes("logs"));
+    expect(JSON.stringify(logs.Resource)).not.toContain("GetAtt");
+    expect(logs.Resource["Fn::Sub"]).toContain(`log-group:/aws/lambda/${FUNCTION_NAME}`);
   });
 
   it("carries its own name so the manifest's iam grant can scope to role/TrafficPoppy*", () => {

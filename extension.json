@@ -72,13 +72,7 @@
       },
       {
         "service": "logs",
-        "actions": [
-          "CreateLogGroup",
-          "DeleteLogGroup",
-          "PutRetentionPolicy",
-          "DescribeLogGroups",
-          "TagResource"
-        ],
+        "actions": ["CreateLogGroup", "DeleteLogGroup", "PutRetentionPolicy", "TagResource"],
         "resourceScope": "arn:aws:logs:*:*:log-group:/aws/lambda/TrafficPoppy*"
       },
       {
