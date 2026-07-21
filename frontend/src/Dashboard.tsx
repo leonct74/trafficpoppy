@@ -131,6 +131,18 @@ export function Dashboard(props: { site: Site; onBack: () => void }) {
             <BarList title="Operating systems" rows={range.os} empty="—" />
           </div>
           <div className="grid-2">
+            <BarList
+              title="Campaign sources"
+              rows={range.utmSources}
+              empty="Tag your links with ?utm_source=newsletter and arrivals show up here."
+            />
+            <BarList
+              title="Campaigns"
+              rows={range.utmCampaigns}
+              empty="Add ?utm_campaign=spring-launch to a tagged link to name the campaign."
+            />
+          </div>
+          <div className="grid-2">
             <BarList title="Screen sizes" rows={range.sizes} empty="—" />
             <CostCard monthViews={monthViews} />
           </div>

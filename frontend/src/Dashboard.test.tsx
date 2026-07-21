@@ -32,6 +32,9 @@ function range(over: Partial<RangeStats> = {}): RangeStats {
     browsers: [{ key: "Chrome", count: 12 }],
     os: [{ key: "macOS", count: 12 }],
     sizes: [{ key: "desktop", count: 12 }],
+    utmSources: [{ key: "newsletter", count: 5 }],
+    utmCampaigns: [],
+    utmMediums: [],
     receiving: true,
     ...over,
   };
@@ -54,6 +57,8 @@ describe("Dashboard", () => {
     expect(screen.getByText("Chrome")).toBeInTheDocument();
     expect(screen.getByText("macOS")).toBeInTheDocument();
     expect(screen.getByText("desktop")).toBeInTheDocument();
+    expect(screen.getByText("newsletter")).toBeInTheDocument(); // campaign sources
+    expect(screen.getByText(/utm_campaign=/i)).toBeInTheDocument(); // teaching empty state
   });
 
   it("re-reads when the range changes", async () => {

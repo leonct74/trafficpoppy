@@ -126,6 +126,8 @@ describe("SiteRegistry.rangeStats — the dashboard's range read", () => {
         { sk: "browser#Firefox", count: 5 },
         { sk: "os#Windows", count: 5 },
         { sk: "size#mobile", count: 5 },
+        { sk: "utm_source#newsletter", count: 2 },
+        { sk: "utm_campaign#spring-launch", count: 2 },
       ],
     });
     const r = await reg(db).rangeStats("s1", ["2026-07-17", "2026-07-18"]);
@@ -140,6 +142,9 @@ describe("SiteRegistry.rangeStats — the dashboard's range read", () => {
     expect(r.topReferrers).toEqual([{ key: "news.ycombinator.com", count: 2 }]);
     expect(r.os.map((o) => o.key)).toEqual(["Windows", "macOS"]);
     expect(r.sizes.map((s) => s.key)).toEqual(["mobile", "desktop"]);
+    expect(r.utmSources).toEqual([{ key: "newsletter", count: 2 }]);
+    expect(r.utmCampaigns).toEqual([{ key: "spring-launch", count: 2 }]);
+    expect(r.utmMediums).toEqual([]);
     expect(r.receiving).toBe(true);
     expect(r.from).toBe("2026-07-17");
     expect(r.to).toBe("2026-07-18");

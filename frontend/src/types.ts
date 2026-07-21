@@ -50,6 +50,10 @@ export interface RangeStats {
   browsers: { key: string; count: number }[];
   os: { key: string; count: number }[];
   sizes: { key: string; count: number }[];
+  /** The allowlisted utm params — the whole marketing-attribution surface. */
+  utmSources: { key: string; count: number }[];
+  utmCampaigns: { key: string; count: number }[];
+  utmMediums: { key: string; count: number }[];
   receiving: boolean;
 }
 
