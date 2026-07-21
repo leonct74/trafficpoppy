@@ -373,3 +373,22 @@ materializes.
   confirmation before the first AWS write.**
 - Next after P0: **P1 collector core** (t.js + POST /e Lambda, aggregation writes, daily-salt
   uniques, site registry, per-site cap).
+- 2026-07-21 — **P0 + P1 COMPLETE, live-verified and CERTIFIED.** Real pageviews from
+  ollydigital.com land as counters through the deployed collector. Three live-only bugs
+  found and permanently fixed with regression tests: (1) public Function URLs need BOTH
+  invoke permissions since Oct 2025 (§2 template carries both); (2) CORS is owned solely
+  by the URL config — a handler that also emits CORS duplicates the header and browsers
+  hard-reject; (3) sendBeacon bodies must be plain strings — a typed application/json Blob
+  forces a credentialed CORS preflight that silently drops the beacon. Also learned on the
+  first stack UPDATE: stack-tag changes make CloudFormation read every resource's tags, so
+  the manifest carries the tag-READ grants + ContinueUpdateRollback (recovery updates the
+  stack in place — never delete: that would burn the Function URL under installed
+  snippets). `npm run certify` green: real deploy→use→teardown, 5 tagged resources before,
+  **zero residuals** after our own hook (host cleanup off).
+- 2026-07-21 — **P2 Dashboard MVP shipped.** Range read (`/sites/:id/range`, one Query per
+  UTC day merged in memory), dashboard screen (today/7d/30d tabs, daily bars strip, ranked
+  pages/referrers/browsers/OS/sizes + campaign source/campaign panels from the allowlisted
+  utm counters), cost line from real 30-day usage (AGENTS.md §9). Range "visitors" is the
+  sum of DAILY uniques — cross-day identity is impossible by design (§4) and the UI says so.
+- Current: **P3 — premium-quality reports & polish** (§13). Owed observation: first daily
+  salt rotation (uniques reset at UTC midnight) — check next session.

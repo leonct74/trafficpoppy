@@ -79,8 +79,9 @@ decisions: `DESIGN.md` §11–13.
 
 ## Status
 
-Planning complete (DESIGN.md §14). **Current phase: P0 — walking skeleton** (scaffold →
-empty-stack deploy → teardown → certify green → dev-install visible in AgentsPoppy).
+P0–P2 complete (DESIGN.md §14): collector live-verified on a real site, leaves-no-trace
+**certified** (zero residuals), dashboard MVP shipped. **Current phase: P3 — premium-quality
+reports & polish.**
 Remote: `https://github.com/leonct74/trafficpoppy.git`. Before the repo ever goes public,
 run the pre-public checklist in `agentspoppy/docs/ROADMAP.md` (history secret scan, FSL
 headers, no personal paths).
