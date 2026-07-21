@@ -6,6 +6,16 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { CloudFormationClient } from "@aws-sdk/client-cloudformation";
 import { S3Client } from "@aws-sdk/client-s3";
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
+import {
+  LambdaClient,
+  AddPermissionCommand,
+  CreateFunctionUrlConfigCommand,
+  DeleteFunctionUrlConfigCommand,
+  GetFunctionCommand,
+  GetFunctionUrlConfigCommand,
+  GetPolicyCommand,
+  RemovePermissionCommand,
+} from "@aws-sdk/client-lambda";
 import { readBootstrap, brokerCredentialsProvider } from "./boot";
 import { deploy, getStatus, teardown, tableName, type AwsCtx } from "./stack";
 import { SiteRegistry } from "./sites";
@@ -20,6 +30,7 @@ const aws: AwsCtx = {
   accountId: boot.account.accountId,
 };
 const sites = new SiteRegistry(new DynamoDBClient({ region, credentials }), tableName);
+const lambda = new LambdaClient({ region, credentials });
 /** The current UTC day (YYYY-MM-DD) — the key the dashboard reads. */
 const today = () => new Date().toISOString().slice(0, 10);
 /** Attribution for the stack (who created it) — separate from the AWS client context. */
@@ -62,7 +73,18 @@ const server = createServer(async (req, res) => {
     // The live deployment state, read from CloudFormation on every call. The frontend
     // holds no memory of a deploy; this is what it mounts against and polls.
     if (method === "GET" && parts[0] === "status" && parts.length === 1) {
-      return json(res, 200, await getStatus(aws));
+      const status = await getStatus(aws);
+      // Prefer the LIVE Function URL over the stack output: a repair recreates the URL
+      // out-of-band, and snippets must always carry the address that actually serves.
+      if (status.phase === "ready") {
+        try {
+          const live = await lambda.send(new GetFunctionUrlConfigCommand({ FunctionName: "TrafficPoppyCollector" }));
+          if (live.FunctionUrl) status.collectorUrl = live.FunctionUrl;
+        } catch {
+          /* keep the stack output */
+        }
+      }
+      return json(res, 200, status);
     }
 
     // Start (or update) the deploy. Returns as soon as AWS accepts it — the work carries
@@ -90,6 +112,88 @@ const server = createServer(async (req, res) => {
           return json(res, 200, { ok: true });
         }
       }
+    }
+
+    // Read-only diagnostic: the collector's DEPLOYED Function URL auth config + resource
+    // policy, so we can see why public requests are being refused. GetPolicy may not be
+    // granted; report it as unavailable rather than failing the whole check.
+    if (method === "GET" && parts[0] === "debug" && parts[1] === "collector") {
+      const fn = "TrafficPoppyCollector";
+      const urlCfg = await lambda.send(new GetFunctionUrlConfigCommand({ FunctionName: fn }));
+      let policy: unknown = "unavailable";
+      try {
+        const p = await lambda.send(new GetPolicyCommand({ FunctionName: fn }));
+        policy = p.Policy ? JSON.parse(p.Policy) : "empty";
+      } catch (e) {
+        policy = `unavailable: ${(e as Error).name}`;
+      }
+      let fnState: unknown = "unavailable";
+      try {
+        const f = await lambda.send(new GetFunctionCommand({ FunctionName: fn }));
+        fnState = {
+          State: f.Configuration?.State,
+          StateReason: f.Configuration?.StateReason,
+          LastUpdateStatus: f.Configuration?.LastUpdateStatus,
+          LastUpdateStatusReason: f.Configuration?.LastUpdateStatusReason,
+          Runtime: f.Configuration?.Runtime,
+          Handler: f.Configuration?.Handler,
+        };
+      } catch (e) {
+        fnState = `unavailable: ${(e as Error).name}`;
+      }
+      return json(res, 200, {
+        authType: urlCfg.AuthType,
+        cors: urlCfg.Cors,
+        functionUrl: urlCfg.FunctionUrl,
+        function: fnState,
+        policy,
+      });
+    }
+
+    // Repair actions for the stuck-public-URL condition (edge refuses anonymous invokes
+    // despite a correct NONE config + allow-everyone policy). Both recreate state OUT-OF-
+    // BAND from CloudFormation — the working theory is that CFN-created registrations are
+    // what's broken. Founder-triggered during live debugging; not exposed in the UI.
+    const CORS_CFG = {
+      AllowOrigins: ["*"],
+      AllowMethods: ["GET", "POST"],
+      AllowHeaders: ["content-type"],
+      MaxAge: 86400,
+    };
+    if (method === "POST" && parts[0] === "repair" && parts[1] === "url") {
+      const fn = "TrafficPoppyCollector";
+      try {
+        await lambda.send(new DeleteFunctionUrlConfigCommand({ FunctionName: fn }));
+      } catch {
+        /* already gone is fine */
+      }
+      const created = await lambda.send(
+        new CreateFunctionUrlConfigCommand({ FunctionName: fn, AuthType: "NONE", Cors: CORS_CFG }),
+      );
+      return json(res, 200, { ok: true, functionUrl: created.FunctionUrl });
+    }
+    if (method === "POST" && parts[0] === "repair" && parts[1] === "permission") {
+      const fn = "TrafficPoppyCollector";
+      // Drop every existing statement, then write a fresh canonical public-invoke one.
+      try {
+        const p = await lambda.send(new GetPolicyCommand({ FunctionName: fn }));
+        const sids: string[] = p.Policy ? JSON.parse(p.Policy).Statement.map((s: { Sid: string }) => s.Sid) : [];
+        for (const sid of sids) {
+          await lambda.send(new RemovePermissionCommand({ FunctionName: fn, StatementId: sid }));
+        }
+      } catch {
+        /* no policy yet is fine */
+      }
+      await lambda.send(
+        new AddPermissionCommand({
+          FunctionName: fn,
+          StatementId: "TrafficPoppyPublicUrl",
+          Action: "lambda:InvokeFunctionUrl",
+          Principal: "*",
+          FunctionUrlAuthType: "NONE",
+        }),
+      );
+      return json(res, 200, { ok: true });
     }
 
     // The teardown hook the host POSTs at the start of teardown. MUST be idempotent.

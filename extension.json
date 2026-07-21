@@ -52,6 +52,7 @@
           "GetFunctionUrlConfig",
           "AddPermission",
           "RemovePermission",
+          "GetPolicy",
           "TagResource"
         ],
         "resourceScope": "arn:aws:lambda:*:*:function:TrafficPoppy*"
