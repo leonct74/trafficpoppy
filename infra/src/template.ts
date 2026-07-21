@@ -175,7 +175,12 @@ export function buildTemplate(): CfnTemplate {
         },
       },
 
-      // A Function URL needs an explicit resource-based permission for public invoke.
+      // A public Function URL needs TWO resource-based permission statements since the
+      // October 2025 Lambda change (docs: urls-auth): InvokeFunctionUrl (gated to
+      // auth-type NONE) AND InvokeFunction (gated to calls made via the URL). The console
+      // writes both automatically; CloudFormation users must declare both. With only the
+      // first, every anonymous request gets 403 "even if the function URL uses the NONE
+      // auth type" — which cost us a full live-debugging day to learn.
       CollectorUrlPermission: {
         Type: "AWS::Lambda::Permission",
         Properties: {
@@ -183,6 +188,16 @@ export function buildTemplate(): CfnTemplate {
           Action: "lambda:InvokeFunctionUrl",
           Principal: "*",
           FunctionUrlAuthType: "NONE",
+        },
+      },
+      CollectorUrlInvokePermission: {
+        Type: "AWS::Lambda::Permission",
+        Properties: {
+          FunctionName: { Ref: "Collector" },
+          Action: "lambda:InvokeFunction",
+          Principal: "*",
+          // Only when invoked through the Function URL — never direct SDK invocation.
+          InvokedViaFunctionUrl: true,
         },
       },
     },

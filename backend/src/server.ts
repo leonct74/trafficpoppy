@@ -9,13 +9,17 @@ import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import {
   LambdaClient,
   AddPermissionCommand,
+  CreateFunctionCommand,
   CreateFunctionUrlConfigCommand,
+  DeleteFunctionCommand,
   DeleteFunctionUrlConfigCommand,
   GetFunctionCommand,
   GetFunctionUrlConfigCommand,
   GetPolicyCommand,
   RemovePermissionCommand,
+  TagResourceCommand,
 } from "@aws-sdk/client-lambda";
+import { probeZipBase64 } from "./generated/backend-bundle";
 import { readBootstrap, brokerCredentialsProvider } from "./boot";
 import { deploy, getStatus, teardown, tableName, type AwsCtx } from "./stack";
 import { SiteRegistry } from "./sites";
@@ -184,6 +188,10 @@ const server = createServer(async (req, res) => {
       } catch {
         /* no policy yet is fine */
       }
+      // Since October 2025 a public Function URL needs BOTH statements (docs: urls-auth):
+      // InvokeFunctionUrl (auth-type-NONE-gated) AND InvokeFunction (gated to calls made
+      // via the URL). The console adds both automatically; CFN/API users must. Missing the
+      // second one yields exactly a 403 "even if the function URL uses the NONE auth type".
       await lambda.send(
         new AddPermissionCommand({
           FunctionName: fn,
@@ -193,6 +201,79 @@ const server = createServer(async (req, res) => {
           FunctionUrlAuthType: "NONE",
         }),
       );
+      await lambda.send(
+        new AddPermissionCommand({
+          FunctionName: fn,
+          StatementId: "TrafficPoppyPublicUrlInvoke",
+          Action: "lambda:InvokeFunction",
+          Principal: "*",
+          InvokedViaFunctionUrl: true,
+        }),
+      );
+      return json(res, 200, { ok: true });
+    }
+
+    // Probe: a minimal broker-created hello-function to bisect the public-URL 403.
+    // Same shape as a console-made hello-world; created via the SAME brokered creds as
+    // the collector; initially UNTAGGED. /probe/tag then adds the agentspoppy tags so we
+    // can observe whether tagging flips its URL from 200 to 403. /probe/delete cleans up
+    // (it must never outlive the debugging session — leaves-no-trace).
+    const PROBE = "TrafficPoppyProbe";
+    if (method === "POST" && parts[0] === "probe" && parts[1] === "create") {
+      const roleArn = `arn:aws:iam::${boot.account.accountId}:role/TrafficPoppyCollectorRole`;
+      await lambda.send(
+        new CreateFunctionCommand({
+          FunctionName: PROBE,
+          Runtime: "nodejs20.x",
+          Handler: "probe.handler",
+          Role: roleArn,
+          Code: { ZipFile: Buffer.from(probeZipBase64, "base64") },
+          Timeout: 5,
+          MemorySize: 128,
+        }),
+      );
+      // Wait for Active before attaching the URL (mirrors what the console does).
+      for (let i = 0; i < 15; i++) {
+        const f = await lambda.send(new GetFunctionCommand({ FunctionName: PROBE }));
+        if (f.Configuration?.State === "Active") break;
+        await new Promise((r) => setTimeout(r, 2000));
+      }
+      const url = await lambda.send(new CreateFunctionUrlConfigCommand({ FunctionName: PROBE, AuthType: "NONE" }));
+      await lambda.send(
+        new AddPermissionCommand({
+          FunctionName: PROBE,
+          StatementId: "ProbePublic",
+          Action: "lambda:InvokeFunctionUrl",
+          Principal: "*",
+          FunctionUrlAuthType: "NONE",
+        }),
+      );
+      return json(res, 200, { ok: true, functionUrl: url.FunctionUrl });
+    }
+    if (method === "POST" && parts[0] === "probe" && parts[1] === "tag") {
+      await lambda.send(
+        new TagResourceCommand({
+          Resource: `arn:aws:lambda:${region}:${boot.account.accountId}:function:${PROBE}`,
+          Tags: {
+            "agentspoppy:account": boot.account.accountId,
+            "agentspoppy:app": "com.trafficpoppy.desktop",
+            "agentspoppy:connection": boot.connectionId,
+          },
+        }),
+      );
+      return json(res, 200, { ok: true });
+    }
+    if (method === "POST" && parts[0] === "probe" && parts[1] === "delete") {
+      try {
+        await lambda.send(new DeleteFunctionUrlConfigCommand({ FunctionName: PROBE }));
+      } catch {
+        /* already gone */
+      }
+      try {
+        await lambda.send(new DeleteFunctionCommand({ FunctionName: PROBE }));
+      } catch {
+        /* already gone */
+      }
       return json(res, 200, { ok: true });
     }
 

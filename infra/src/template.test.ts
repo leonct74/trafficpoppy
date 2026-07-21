@@ -61,6 +61,19 @@ describe("the collector Lambda + its scoped role", () => {
     expect(CollectorUrl.Properties.Cors.AllowMethods).toEqual(["GET", "POST"]);
   });
 
+  it("grants BOTH public-invoke statements the post-Oct-2025 contract requires", () => {
+    // With only InvokeFunctionUrl, anonymous requests 403 "even if the function URL uses
+    // the NONE auth type" (docs: urls-auth). A full live-debugging day says never again.
+    const urlPerm = R.CollectorUrlPermission!;
+    expect(urlPerm.Properties.Action).toBe("lambda:InvokeFunctionUrl");
+    expect(urlPerm.Properties.FunctionUrlAuthType).toBe("NONE");
+    const invokePerm = R.CollectorUrlInvokePermission!;
+    expect(invokePerm.Properties.Action).toBe("lambda:InvokeFunction");
+    expect(invokePerm.Properties.Principal).toBe("*");
+    // Gated to URL-originated calls only — never open direct SDK invocation to the world.
+    expect(invokePerm.Properties.InvokedViaFunctionUrl).toBe(true);
+  });
+
   it("gives the Lambda a role that can reach ONLY its own table and log group (least privilege)", () => {
     const stmts = CollectorRole.Properties.Policies[0].PolicyDocument.Statement;
     const dynamo = stmts.find((s: any) => JSON.stringify(s.Action).includes("dynamodb"));

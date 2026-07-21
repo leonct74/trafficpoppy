@@ -94,6 +94,14 @@ async function main() {
   const lambdaZip = deterministicZip([{ name: "collector.js", data: lambdaJs }], epoch);
   const lambdaZipBase64 = lambdaZip.toString("base64");
 
+  // 2b. A minimal probe function (diagnostics): same shape as a hand-made hello-world,
+  //     but deployable through the broker to bisect WHAT about the collector trips the
+  //     public-URL 403. Tiny, tag-free, deleted after use.
+  const probeJs = Buffer.from(
+    'exports.handler=async()=>({statusCode:200,headers:{"content-type":"text/plain"},body:"TrafficPoppy probe OK"});',
+  );
+  const probeZipBase64 = deterministicZip([{ name: "probe.js", data: probeJs }], epoch).toString("base64");
+
   // 3. Emit the module the sidecar imports. Git-ignored: it is a build output, and
   //    committing it would let it drift from infra/ + lambdas/.
   console.log("[3/3] generate backend/src/generated/backend-bundle.ts");
@@ -109,6 +117,7 @@ async function main() {
       `export const templateJson = ${JSON.stringify(templateJson)};`,
       `export const lambdaCodeKey = ${JSON.stringify(lambdaCodeKey)};`,
       `export const lambdaZipBase64 = ${JSON.stringify(lambdaZipBase64)};`,
+      `export const probeZipBase64 = ${JSON.stringify(probeZipBase64)};`,
       `export const sourceCommit = ${JSON.stringify(git(["rev-parse", "HEAD"]))};`,
       "",
     ].join("\n"),
