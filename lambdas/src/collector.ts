@@ -28,14 +28,11 @@ interface LambdaResponse {
   isBase64Encoded?: boolean;
 }
 
-/** CORS: t.js POSTs from the owner's own site (cross-origin). Opaque, so `*` is correct. */
-const CORS = {
-  "access-control-allow-origin": "*",
-  "access-control-allow-methods": "GET, POST, OPTIONS",
-  "access-control-allow-headers": "content-type",
-};
-
-const noContent = (): LambdaResponse => ({ statusCode: 204, headers: { ...CORS } });
+// CORS is owned ENTIRELY by the Function URL's Cors config (see infra/template.ts) — the
+// handler must NOT emit its own CORS headers. When both do, the response carries a
+// DUPLICATE Access-Control-Allow-Origin, which browsers hard-reject: curl works, but every
+// real visitor's beacon dies silently. (Live lesson from the first ollydigital.com install.)
+const noContent = (): LambdaResponse => ({ statusCode: 204 });
 
 /** Reconstruct the origin the request arrived on — where t.js should POST back. */
 function originOf(event: FunctionUrlEvent): string {
@@ -72,7 +69,7 @@ export async function handleEvent(event: FunctionUrlEvent, deps: HandlerDeps): P
   if (method === "OPTIONS") return noContent();
 
   if (method === "GET" && (path === "/t.js" || path === "/t.js/")) {
-    return { statusCode: 200, headers: { ...trackerHeaders(), ...CORS }, body: trackerScript(originOf(event)) };
+    return { statusCode: 200, headers: trackerHeaders(), body: trackerScript(originOf(event)) };
   }
 
   if (method === "POST" && (path === "/e" || path === "/e/")) {
@@ -93,7 +90,7 @@ export async function handleEvent(event: FunctionUrlEvent, deps: HandlerDeps): P
     return noContent();
   }
 
-  return { statusCode: 404, headers: { ...CORS }, body: "" };
+  return { statusCode: 404, body: "" };
 }
 
 // --- real AWS wiring (built once per cold start) ------------------------------------------

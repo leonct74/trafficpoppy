@@ -98,13 +98,30 @@ describe("POST /e", () => {
 });
 
 describe("CORS + routing", () => {
-  it("answers preflight with 204 + permissive CORS (opaque cross-origin beacons)", async () => {
+  it("NEVER emits its own CORS headers — the Function URL's Cors config owns them", async () => {
+    // Live lesson from the first real install: when both the handler and the URL config
+    // add Access-Control-Allow-Origin, the response carries it TWICE, and browsers
+    // hard-reject the duplicated header. curl works; every real visitor's beacon dies
+    // silently. So the handler must stay CORS-silent on every route.
+    for (const r of [
+      req({ rawPath: "/e", requestContext: { http: { method: "OPTIONS" } } }),
+      req({ rawPath: "/e", requestContext: { http: { method: "POST" } }, body: JSON.stringify({ s: "s", p: "/" }) }),
+      req({ rawPath: "/t.js" }),
+      req({ rawPath: "/nope" }),
+    ]) {
+      const res = await handleEvent(r as never, fakeDeps());
+      for (const h of Object.keys(res.headers ?? {})) {
+        expect(h.toLowerCase()).not.toMatch(/^access-control-/);
+      }
+    }
+  });
+
+  it("answers preflight with a bare 204 (the URL layer decorates it)", async () => {
     const res = await handleEvent(
       req({ rawPath: "/e", requestContext: { http: { method: "OPTIONS" } } }) as never,
       fakeDeps(),
     );
     expect(res.statusCode).toBe(204);
-    expect(res.headers?.["access-control-allow-origin"]).toBe("*");
   });
 
   it("404s an unknown route", async () => {
