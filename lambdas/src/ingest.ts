@@ -6,7 +6,7 @@
 // critical behaviours we must be able to pin (DESIGN.md §4).
 
 import { createHash } from "node:crypto";
-import { counterKeys, dayPk, uniqPk, type NormalizedEvent } from "./core";
+import { counterKeys, dayPk, recentPk, uniqPk, type NormalizedEvent } from "./core";
 import type { Store } from "./store";
 
 const DAY_MS = 86_400_000;
@@ -87,6 +87,14 @@ export async function ingest(
 
   // Detail counters (page, referrer, browser, os, size, utm). total#views is already done.
   const detail = counterKeys(ev, day).filter((k) => k.sk !== "total#views");
+  // Time-of-arrival buckets (P3 reports). SERVER-derived — nothing new is collected from
+  // the visitor. hour#HH powers the hour-of-day strip; the per-minute row powers the live
+  // "last 30 minutes" ticker and self-destructs via TTL (it's traffic volume, not detail).
+  const nowMs = deps.now().getTime();
+  const hh = String(deps.now().getUTCHours()).padStart(2, "0");
+  const minute = new Date(nowMs).toISOString().slice(0, 16); // YYYY-MM-DDTHH:MM
+  detail.push({ pk, sk: `hour#${hh}` });
+  detail.push({ pk: recentPk(ev.siteId), sk: `t#${minute}`, expiresAt: Math.floor(nowMs / 1000) + 7200 });
   await deps.store.bumpCounters(detail);
 
   // Daily unique: conditional put of the salted hash; only the first hit of the day counts.

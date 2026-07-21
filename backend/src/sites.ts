@@ -139,8 +139,11 @@ export class SiteRegistry {
    * can know: the daily salt is destroyed every 24 h, so cross-day identity cannot exist,
    * by design (DESIGN.md §4). The UI labels it accordingly.
    */
-  async rangeStats(siteId: string, days: string[]): Promise<RangeStats> {
-    const perDay = await Promise.all(days.map((d) => this.dayRows(siteId, d)));
+  async rangeStats(siteId: string, days: string[], prevDays: string[] = []): Promise<RangeStats> {
+    const [perDay, perPrevDay] = await Promise.all([
+      Promise.all(days.map((d) => this.dayRows(siteId, d))),
+      Promise.all(prevDays.map((d) => this.dayRows(siteId, d))),
+    ]);
 
     const series: { day: string; views: number; uniques: number }[] = [];
     const sums = new Map<string, number>();
@@ -174,9 +177,61 @@ export class SiteRegistry {
       utmSources: pick("utm_source#", 10),
       utmCampaigns: pick("utm_campaign#", 10),
       utmMediums: pick("utm_medium#", 10),
+      // Hour-of-day distribution (UTC) — 24 buckets, from the collector's hour# counters.
+      hours: Array.from({ length: 24 }, (_, h) => sums.get(`hour#${String(h).padStart(2, "0")}`) ?? 0),
+      prev: prevDays.length > 0 ? this.prevWindow(perPrevDay) : undefined,
       receiving: sums.size > 0,
     };
   }
+
+  /** The previous window's totals + breakdowns — what Δ% chips and top movers compare against. */
+  private prevWindow(perDay: { sk: string; count: number }[][]): NonNullable<RangeStats["prev"]> {
+    const sums = new Map<string, number>();
+    for (const rows of perDay) for (const r of rows) sums.set(r.sk, (sums.get(r.sk) ?? 0) + r.count);
+    const pick = (prefix: string) =>
+      [...sums.entries()]
+        .filter(([sk]) => sk.startsWith(prefix))
+        .map(([sk, count]) => ({ key: sk.slice(prefix.length), count }))
+        .sort((a, b) => b.count - a.count || a.key.localeCompare(b.key));
+    return {
+      views: sums.get("total#views") ?? 0,
+      uniques: sums.get("total#uniques") ?? 0,
+      topPages: pick("page#"),
+      topReferrers: pick("ref#"),
+    };
+  }
+
+  /**
+   * The live "last 30 minutes" read: one Query over the site's rolling per-minute
+   * partition (rows are TTL'd at 2 h, so it stays tiny), reduced to a 30-slot series.
+   */
+  async live(siteId: string, now: Date): Promise<LiveStats> {
+    const out = await this.db.send(
+      new QueryCommand({
+        TableName: this.tableName,
+        KeyConditionExpression: "pk = :p",
+        ExpressionAttributeValues: { ":p": { S: `site#${siteId}#recent` } },
+      }),
+    );
+    const byMinute = new Map<string, number>();
+    for (const it of out.Items ?? []) {
+      const sk = it.sk?.S ?? "";
+      if (sk.startsWith("t#")) byMinute.set(sk.slice(2), Number(it.count?.N ?? "0"));
+    }
+    const minutes: { minute: string; views: number }[] = [];
+    for (let i = 29; i >= 0; i--) {
+      const m = new Date(now.getTime() - i * 60_000).toISOString().slice(0, 16);
+      minutes.push({ minute: m, views: byMinute.get(m) ?? 0 });
+    }
+    return { siteId, minutes, views: minutes.reduce((a, b) => a + b.views, 0) };
+  }
+}
+
+/** The live-ticker read: views per minute over the last half hour, oldest first. */
+export interface LiveStats {
+  siteId: string;
+  minutes: { minute: string; views: number }[];
+  views: number;
 }
 
 /** What the dashboard renders for a picked range. Mirrored in frontend/src/types.ts. */
@@ -198,6 +253,10 @@ export interface RangeStats {
   utmSources: { key: string; count: number }[];
   utmCampaigns: { key: string; count: number }[];
   utmMediums: { key: string; count: number }[];
+  /** Views per UTC hour-of-day, 24 buckets (index = hour). */
+  hours: number[];
+  /** The immediately-preceding window of the same length — for Δ% and top movers. */
+  prev?: { views: number; uniques: number; topPages: { key: string; count: number }[]; topReferrers: { key: string; count: number }[] };
   receiving: boolean;
 }
 

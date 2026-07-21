@@ -150,11 +150,63 @@ describe("SiteRegistry.rangeStats — the dashboard's range read", () => {
     expect(r.to).toBe("2026-07-18");
   });
 
+  it("carries hour-of-day buckets and the previous window's totals + breakdowns", async () => {
+    const db = dbByDay({
+      "2026-07-16": [
+        { sk: "total#views", count: 10 },
+        { sk: "total#uniques", count: 6 },
+        { sk: "page#/old", count: 10 },
+        { sk: "ref#google.com", count: 4 },
+      ],
+      "2026-07-17": [
+        { sk: "total#views", count: 3 },
+        { sk: "hour#09", count: 2 },
+        { sk: "hour#22", count: 1 },
+      ],
+    });
+    const r = await reg(db).rangeStats("s1", ["2026-07-17"], ["2026-07-16"]);
+    expect(r.hours).toHaveLength(24);
+    expect(r.hours[9]).toBe(2);
+    expect(r.hours[22]).toBe(1);
+    expect(r.hours[0]).toBe(0);
+    expect(r.prev).toEqual({
+      views: 10,
+      uniques: 6,
+      topPages: [{ key: "/old", count: 10 }],
+      topReferrers: [{ key: "google.com", count: 4 }],
+    });
+  });
+
+  it("omits prev entirely when no previous window was asked for", async () => {
+    const r = await reg(dbByDay({})).rangeStats("s1", ["2026-07-17"]);
+    expect(r.prev).toBeUndefined();
+  });
+
   it("reports an empty range as not-receiving (powers the teach-the-snippet empty state)", async () => {
     const r = await reg(dbByDay({})).rangeStats("s1", ["2026-07-17", "2026-07-18"]);
     expect(r.receiving).toBe(false);
     expect(r.views).toBe(0);
     expect(r.days).toHaveLength(2); // series still covers the whole range, zero-filled
+  });
+});
+
+describe("SiteRegistry.live — the last-30-minutes ticker", () => {
+  it("reduces the rolling minute partition to a 30-slot series ending now", async () => {
+    const db = {
+      send: vi.fn(async () => ({
+        Items: [
+          { sk: { S: "t#2026-07-18T09:05" }, count: { N: "2" } },
+          { sk: { S: "t#2026-07-18T09:29" }, count: { N: "1" } },
+          { sk: { S: "t#2026-07-18T07:00" }, count: { N: "9" } }, // older than the window — excluded
+        ],
+      })),
+    } as unknown as DynamoDBClient;
+    const l = await reg(db).live("s1", new Date("2026-07-18T09:30:00Z"));
+    expect(l.minutes).toHaveLength(30);
+    expect(l.minutes[0]).toEqual({ minute: "2026-07-18T09:01", views: 0 });
+    expect(l.minutes[29]).toEqual({ minute: "2026-07-18T09:30", views: 0 });
+    expect(l.minutes.find((m) => m.minute === "2026-07-18T09:05")?.views).toBe(2);
+    expect(l.views).toBe(3); // 2 + 1; the 07:00 row is outside the half hour
   });
 });
 

@@ -54,7 +54,23 @@ export interface RangeStats {
   utmSources: { key: string; count: number }[];
   utmCampaigns: { key: string; count: number }[];
   utmMediums: { key: string; count: number }[];
+  /** Views per UTC hour-of-day, 24 buckets (index = hour). */
+  hours: number[];
+  /** The immediately-preceding window of the same length — for Δ% and top movers. */
+  prev?: {
+    views: number;
+    uniques: number;
+    topPages: { key: string; count: number }[];
+    topReferrers: { key: string; count: number }[];
+  };
   receiving: boolean;
+}
+
+/** The live-ticker read: views per minute over the last half hour, oldest first. */
+export interface LiveStats {
+  siteId: string;
+  minutes: { minute: string; views: number }[];
+  views: number;
 }
 
 export interface SiteStats {

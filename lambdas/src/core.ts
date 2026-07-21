@@ -166,14 +166,18 @@ export function isDoNotTrack(headers: Record<string, string | undefined>): boole
   return h("Sec-GPC") === "1" || h("DNT") === "1";
 }
 
-/** One counter row to increment: (pk, sk) get `ADD count :1`. */
+/** One counter row to increment: (pk, sk) get `ADD count :1` (+ TTL when it should age out). */
 export interface CounterKey {
   pk: string;
   sk: string;
+  /** Epoch-seconds TTL for short-lived rows (the last-30-minutes ticker); absent = keep. */
+  expiresAt?: number;
 }
 
 export const dayPk = (siteId: string, day: string) => `site#${siteId}#day#${day}`;
 export const uniqPk = (siteId: string, day: string) => `site#${siteId}#uniq#${day}`;
+/** The rolling per-minute partition behind the live "last 30 minutes" ticker (P3). */
+export const recentPk = (siteId: string) => `site#${siteId}#recent`;
 
 /**
  * The full set of counter rows a single pageview increments (DESIGN.md §2 single-table

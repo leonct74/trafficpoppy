@@ -84,9 +84,13 @@ export class DynamoStore implements Store {
           new UpdateItemCommand({
             TableName: this.tableName,
             Key: { pk: { S: k.pk }, sk: { S: k.sk } },
-            UpdateExpression: "ADD #c :one",
+            // Short-lived rows (the live ticker's minute buckets) also carry their TTL.
+            UpdateExpression: k.expiresAt ? "ADD #c :one SET expiresAt = :x" : "ADD #c :one",
             ExpressionAttributeNames: { "#c": "count" },
-            ExpressionAttributeValues: { ":one": { N: "1" } },
+            ExpressionAttributeValues: {
+              ":one": { N: "1" },
+              ...(k.expiresAt ? { ":x": { N: String(k.expiresAt) } } : {}),
+            },
           }),
         ),
       ),

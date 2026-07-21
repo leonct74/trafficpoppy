@@ -3,7 +3,7 @@
 // goes through the bridge.
 
 import { host } from "./host";
-import type { DeploymentStatus, Meta, RangeStats, Site, SiteStats } from "./types";
+import type { DeploymentStatus, LiveStats, Meta, RangeStats, Site, SiteStats } from "./types";
 
 export const api = {
   meta: (): Promise<Meta> => host.invokeBackend({ method: "GET", path: "/meta" }),
@@ -33,4 +33,8 @@ export const api = {
   /** The dashboard's range read: last `days` UTC days, aggregated server-side. */
   rangeStats: (id: string, days: number): Promise<{ range: RangeStats }> =>
     host.invokeBackend({ method: "GET", path: `/sites/${encodeURIComponent(id)}/range?days=${days}` }),
+
+  /** The last-30-minutes ticker. */
+  liveStats: (id: string): Promise<{ live: LiveStats }> =>
+    host.invokeBackend({ method: "GET", path: `/sites/${encodeURIComponent(id)}/live` }),
 };

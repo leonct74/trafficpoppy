@@ -112,9 +112,15 @@ const server = createServer(async (req, res) => {
           return json(res, 200, { stats: await sites.stats(id, day) });
         }
         // The dashboard's range read: ?days=1|7|30 (clamped — each day is one Query).
+        // Always carries the PREVIOUS same-length window too (Δ% chips + top movers).
         if (method === "GET" && parts[2] === "range") {
           const n = Math.min(90, Math.max(1, Number(url.searchParams.get("days") ?? "7") || 7));
-          return json(res, 200, { range: await sites.rangeStats(id, lastDays(n, today())) });
+          const both = lastDays(n * 2, today());
+          return json(res, 200, { range: await sites.rangeStats(id, both.slice(n), both.slice(0, n)) });
+        }
+        // The live "last 30 minutes" ticker.
+        if (method === "GET" && parts[2] === "live") {
+          return json(res, 200, { live: await sites.live(id, new Date()) });
         }
         if (method === "DELETE" && parts.length === 2) {
           await sites.remove(id);

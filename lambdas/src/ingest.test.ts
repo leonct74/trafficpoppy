@@ -103,6 +103,23 @@ describe("ingest — one pageview", () => {
     expect(f.counters.get("site#s1#day#2026-07-18|page#/x")).toBe(2);
   });
 
+  it("buckets time of arrival: hour-of-day counter + a TTL'd minute row for the live ticker", async () => {
+    const f = fakeStore();
+    let ttlSeen: number | undefined;
+    const orig = f.store.bumpCounters;
+    f.store.bumpCounters = async (keys: CounterKey[]) => {
+      for (const k of keys) if (k.expiresAt) ttlSeen = k.expiresAt;
+      return orig(keys);
+    };
+    await ingest(ev, "1.2.3.4", "UA", deps({ store: f.store, now: at("2026-07-18T09:07:33Z") }));
+
+    // Server-derived only — the visitor sent no time field.
+    expect(f.counters.get("site#s1#day#2026-07-18|hour#09")).toBe(1);
+    expect(f.counters.get("site#s1#recent|t#2026-07-18T09:07")).toBe(1);
+    // The minute row self-destructs (2h TTL) — it must never accumulate forever.
+    expect(ttlSeen).toBe(Math.floor(Date.parse("2026-07-18T09:07:33Z") / 1000) + 7200);
+  });
+
   it("never stores the raw IP anywhere in the counters", async () => {
     const f = fakeStore();
     await ingest(ev, "203.0.113.7", "UA", deps({ store: f.store }));

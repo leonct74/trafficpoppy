@@ -102,3 +102,7 @@ textarea.input { font-family: var(--poppy-font-mono); font-size: 13px; min-heigh
 .tabs { display: inline-flex; gap: 2px; background: var(--poppy-surface-2); border-radius: 8px; padding: 3px; }
 .tab { border: none; background: transparent; color: var(--poppy-muted-2); padding: 5px 12px; border-radius: 6px; cursor: pointer; font: inherit; }
 .tab.active { background: var(--poppy-surface-0); color: var(--poppy-text); }
+
+/* Loading placeholders that sketch the layout (P3 look & feel). */
+.skeleton { background: var(--poppy-surface-2); animation: skeleton-pulse 1.2s ease-in-out infinite; }
+@keyframes skeleton-pulse { 0%, 100% { opacity: 0.55; } 50% { opacity: 1; } }
