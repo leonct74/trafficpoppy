@@ -9,6 +9,14 @@
 // fingerprint (canvas/fonts), or send the full page URL or full referrer. The server does
 // the final reduction (referrer→host, utm allowlist) too, but doing it here as well keeps
 // sensitive strings off the wire in the first place.
+//
+// THE BODY MUST STAY A PLAIN STRING (⇒ text/plain, a CORS-safelisted type). sendBeacon is
+// always credentials-include, so a Blob typed application/json forces a credentialed CORS
+// preflight the collector's CORS config (rightly) refuses — sendBeacon returns true, then
+// the browser silently drops the POST. A simple request needs no preflight, and a beacon
+// never reads the response, so no CORS response check can stop the hit. The fetch fallback
+// is the same story: mode:"no-cors" forbids a json content-type header outright. (Live
+// ollydigital.com lesson — tracker.test.ts pins all of this.)
 
 /**
  * Build the served script. `collectorOrigin` is where POST /e lives (the Function URL, or
@@ -41,11 +49,11 @@ export function trackerScript(collectorOrigin: string): string {
     var body={s:site,p:path,r:d.referrer||"",w:w.innerWidth||0};
     if(u.utm_source)body.q=w.location.search;
     var json=JSON.stringify(body);
-    // Prefer sendBeacon so the hit survives an immediate navigation; fall back to fetch.
+    // Plain-string body only — a typed body forces a CORS preflight that kills the hit.
     try{
-      if(n.sendBeacon){n.sendBeacon("${origin}/e",new Blob([json],{type:"application/json"}));return;}
+      if(n.sendBeacon){n.sendBeacon("${origin}/e",json);return;}
     }catch(e){}
-    try{fetch("${origin}/e",{method:"POST",body:json,headers:{"content-type":"application/json"},keepalive:true,mode:"no-cors"});}catch(e){}
+    try{fetch("${origin}/e",{method:"POST",body:json,keepalive:true,mode:"no-cors"});}catch(e){}
   }
   // Count the first load, then every SPA navigation (History API + back/forward).
   function hook(m){var o=history[m];history[m]=function(){var r=o.apply(this,arguments);send();return r;};}

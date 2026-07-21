@@ -38,6 +38,18 @@ describe("t.js — the script that runs on the visitor's page", () => {
     expect(script).toMatch(/popstate/);
   });
 
+  it("sends ONLY simple requests — no typed Blob, no json content-type, ever", () => {
+    // Live ollydigital.com lesson: sendBeacon is always credentials-include, so a Blob
+    // typed application/json forces a credentialed CORS preflight that fails against the
+    // collector's CORS config — sendBeacon returns true, then the browser silently drops
+    // the POST. A plain-string body is text/plain (CORS-safelisted): no preflight, and
+    // since a beacon never reads the response, nothing can stop the hit. Same for the
+    // fallback: mode:"no-cors" forbids a json content-type header outright.
+    expect(script).not.toMatch(/Blob/);
+    expect(script).not.toMatch(/application\/json/);
+    expect(script).not.toMatch(/headers\s*:/);
+  });
+
   it("stays small — the whole point is a ~1 KB tag", () => {
     expect(script.length).toBeLessThan(2048);
   });
