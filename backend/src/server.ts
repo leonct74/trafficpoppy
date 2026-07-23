@@ -23,7 +23,8 @@ import { ACMClient } from "@aws-sdk/client-acm";
 import { edgeRegion, probeZipBase64 } from "./generated/backend-bundle";
 import { readBootstrap, brokerCredentialsProvider } from "./boot";
 import { deploy, getStatus, teardown, tableName, type AwsCtx } from "./stack";
-import { deployEdge, edgeStatus, removeEdge, waitEdgeDeleted, type EdgeCtx } from "./edge";
+import { deployEdge, edgeStatus, removeEdge, type CertStore, type EdgeCtx } from "./edge";
+import { DeleteItemCommand, GetItemCommand, PutItemCommand } from "@aws-sdk/client-dynamodb";
 import { SiteRegistry, lastDays } from "./sites";
 
 const boot = readBootstrap();
@@ -35,13 +36,50 @@ const aws: AwsCtx = {
   region,
   accountId: boot.account.accountId,
 };
-const sites = new SiteRegistry(new DynamoDBClient({ region, credentials }), tableName);
+const db = new DynamoDBClient({ region, credentials });
+const sites = new SiteRegistry(db, tableName);
 const lambda = new LambdaClient({ region, credentials });
+
+/** Where the sidecar remembers the True Reach certificate: a row in the owner's table. */
+const certStore: CertStore = {
+  async get(domain) {
+    const out = await db.send(
+      new GetItemCommand({ TableName: tableName, Key: { pk: { S: "truereach" }, sk: { S: `cert#${domain}` } } }),
+    );
+    return out.Item?.value?.S;
+  },
+  async put(domain, arn) {
+    await db.send(
+      new PutItemCommand({
+        TableName: tableName,
+        Item: { pk: { S: "truereach" }, sk: { S: `cert#${domain}` }, value: { S: arn } },
+      }),
+    );
+  },
+  async del(domain) {
+    await db.send(
+      new DeleteItemCommand({ TableName: tableName, Key: { pk: { S: "truereach" }, sk: { S: `cert#${domain}` } } }),
+    );
+  },
+};
+
+/** The collector's live Function URL host — the edge origin. Empty when not deployed. */
+async function collectorHost(): Promise<string> {
+  try {
+    const live = await lambda.send(new GetFunctionUrlConfigCommand({ FunctionName: "TrafficPoppyCollector" }));
+    return live.FunctionUrl ? new URL(live.FunctionUrl).host : "";
+  } catch {
+    return "";
+  }
+}
+
 // True Reach edge stack lives in us-east-1 (CloudFront's certificate region) whatever the
 // core region is — its own clients.
 const edge: EdgeCtx = {
   cfn: new CloudFormationClient({ region: edgeRegion, credentials }),
   acm: new ACMClient({ region: edgeRegion, credentials }),
+  certs: certStore,
+  attribution: { accountId: boot.account.accountId, connectionId: boot.connectionId },
 };
 /** The current UTC day (YYYY-MM-DD) — the key the dashboard reads. */
 const today = () => new Date().toISOString().slice(0, 10);
@@ -296,29 +334,24 @@ const server = createServer(async (req, res) => {
       return json(res, 200, { ok: true });
     }
 
-    // True Reach (P5): the custom-domain edge stack.
+    // True Reach (P5): sidecar-requested certificate + the CloudFront edge stack.
     if (parts[0] === "truereach" && parts.length === 1) {
-      if (method === "GET") return json(res, 200, { edge: await edgeStatus(edge) });
+      if (method === "GET") return json(res, 200, { edge: await edgeStatus(edge, await collectorHost()) });
       if (method === "POST") {
         const body = (await readBody(req)) as { domain?: string } | undefined;
-        const live = await lambda.send(new GetFunctionUrlConfigCommand({ FunctionName: "TrafficPoppyCollector" }));
-        const host = live.FunctionUrl ? new URL(live.FunctionUrl).host : "";
-        return json(res, 200, await deployEdge(edge, body?.domain ?? "", host, attribution));
+        return json(res, 200, await deployEdge(edge, body?.domain ?? "", await collectorHost()));
       }
       if (method === "DELETE") return json(res, 200, await removeEdge(edge));
     }
 
     // The teardown hook the host POSTs at the start of teardown. MUST be idempotent.
     if (method === "POST" && parts[0] === "teardown" && parts.length === 1) {
-      // Kick the edge stack's delete first (CloudFront disable+delete is the slow one),
-      // remove the core footprint while it drains, then wait the edge out. Idempotent:
+      // Edge first: the distribution must drain before its certificate can be deleted,
+      // and the cert row lives in the table the core teardown deletes. Idempotent:
       // "already gone" at any step is success.
       const edgeRemoval = await removeEdge(edge);
       const core = await teardown(aws);
-      if (edgeRemoval.removed) {
-        await waitEdgeDeleted(edge);
-        core.removed.push("TrafficPoppyEdgeStack");
-      }
+      core.removed.push(...edgeRemoval.removed);
       return json(res, 200, { ok: true, ...core });
     }
 

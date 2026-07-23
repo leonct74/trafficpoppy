@@ -13,9 +13,13 @@ describe("the True Reach edge stack (ACM + CloudFront, us-east-1)", () => {
     expect(EDGE_STACK_NAME).toMatch(/^TrafficPoppy/); // covered by the cloudformation grant scope
   });
 
-  it("validates the certificate by DNS — the owner proves domain control, we never see credentials", () => {
-    expect(R.Certificate!.Type).toBe("AWS::CertificateManager::Certificate");
-    expect(R.Certificate!.Properties.ValidationMethod).toBe("DNS");
+  it("takes the certificate as a PARAMETER — the sidecar requests it, born tagged (I3)", () => {
+    // CloudTrail-proven: CloudFormation's ACM handler calls RequestCertificate without
+    // tags, which the broker's birth-tag rule rightly denies. So no Certificate resource
+    // here — the sidecar requests it with the attribution tags and passes the ARN in.
+    expect(R.Certificate).toBeUndefined();
+    expect((template.Parameters as Record<string, unknown>).CertificateArn).toBeDefined();
+    expect(dist.ViewerCertificate.AcmCertificateArn).toEqual({ Ref: "CertificateArn" });
   });
 
   it("forwards the geo header + opt-out signals, and NEVER the Host header", () => {
@@ -53,7 +57,7 @@ describe("the True Reach edge stack (ACM + CloudFront, us-east-1)", () => {
     // aws:ResourceTag condition could never authorize touching them. ForwardedValues (inside
     // the taggable distribution) does the same job.
     const types = Object.values(R).map((r) => r.Type);
-    expect(types.sort()).toEqual(["AWS::CertificateManager::Certificate", "AWS::CloudFront::Distribution"]);
+    expect(types).toEqual(["AWS::CloudFront::Distribution"]);
   });
 
   it("retains nothing — teardown must remove the whole edge footprint", () => {

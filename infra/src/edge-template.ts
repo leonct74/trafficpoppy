@@ -37,20 +37,16 @@ export function buildEdgeTemplate(): CfnTemplate {
         Type: "String",
         Description: "The collector Function URL's hostname (no scheme) — the origin.",
       },
+      // The certificate is requested by the SIDECAR, not this template: CloudFormation's
+      // ACM handler calls RequestCertificate without tags (CloudTrail-proven), which the
+      // broker's birth-tag rule (SECURITY_MECHANISM.md I3) rightly refuses. The sidecar
+      // requests it WITH the attribution tags and passes the ARN in.
+      CertificateArn: {
+        Type: "String",
+        Description: "ARN of the ISSUED us-east-1 ACM certificate for DomainName.",
+      },
     },
     Resources: {
-      // DNS-validated: CloudFormation holds this resource CREATE_IN_PROGRESS until the
-      // owner adds the validation CNAME at their DNS host. The sidecar surfaces that
-      // record (DescribeCertificate) so the app can show it while the stack waits —
-      // background + resumable by construction (AGENTS.md §5).
-      Certificate: {
-        Type: "AWS::CertificateManager::Certificate",
-        Properties: {
-          DomainName: { Ref: "DomainName" },
-          ValidationMethod: "DNS",
-        },
-      },
-
       Distribution: {
         Type: "AWS::CloudFront::Distribution",
         Properties: {
@@ -63,7 +59,7 @@ export function buildEdgeTemplate(): CfnTemplate {
             PriceClass: "PriceClass_100",
             Aliases: [{ Ref: "DomainName" }],
             ViewerCertificate: {
-              AcmCertificateArn: { Ref: "Certificate" },
+              AcmCertificateArn: { Ref: "CertificateArn" },
               SslSupportMethod: "sni-only",
               MinimumProtocolVersion: "TLSv1.2_2021",
             },
@@ -109,10 +105,6 @@ export function buildEdgeTemplate(): CfnTemplate {
       DistributionDomain: {
         Description: "Point stats.<domain> at this with a CNAME.",
         Value: { "Fn::GetAtt": ["Distribution", "DomainName"] },
-      },
-      CertificateArn: {
-        Description: "The ACM certificate backing the custom domain.",
-        Value: { Ref: "Certificate" },
       },
       CollectorDomain: {
         Description: "The public first-party collector hostname.",
