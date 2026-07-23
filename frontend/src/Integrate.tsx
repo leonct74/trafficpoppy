@@ -62,6 +62,10 @@ const { Items } = await db.send(new QueryCommand({
           <Fact label="Region" value={region} />
           <Fact label="This site's id" value={site.id} />
           <Fact label="Billing" value="on-demand — reads cost fractions of a cent" />
+          {/* The abuse cap, surfaced (DESIGN.md §13 P4): the collector stops counting a
+              site past this many views per day, so a spammed public endpoint can cost at
+              most ~one write per hit — the bill is bounded even under abuse. */}
+          <Fact label="Abuse protection" value="counting stops past 100,000 views/site/day" />
         </dl>
       </div>
 

@@ -33,6 +33,11 @@ describe("Integrate — the your-data-is-yours screen", () => {
     expect(screen.getByText(/expire on their own/i)).toBeInTheDocument();
   });
 
+  it("surfaces the abuse cap — the bill is bounded even if the public endpoint is spammed", () => {
+    renderIt();
+    expect(screen.getByText(/100,000 views\/site\/day/)).toBeInTheDocument();
+  });
+
   it("offers a copy button per snippet and a way back to the dashboard", async () => {
     const onBack = renderIt();
     expect(screen.getAllByRole("button", { name: /copy/i }).length).toBeGreaterThanOrEqual(3);
