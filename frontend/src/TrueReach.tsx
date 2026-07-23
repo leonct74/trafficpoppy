@@ -126,10 +126,17 @@ export function TrueReach(props: { suggestedDomain?: string; onStatus?: (edge: E
       {(edge.phase === "validating" || edge.phase === "deploying" || edge.phase === "ready") && (
         <>
           {edge.phase === "validating" && (
-            <p style={{ margin: 0 }}>
-              Add this record at your DNS host to prove you own <strong>{edge.domain}</strong>. AWS checks
-              automatically — this screen moves on by itself (checks continue even if you close the app).
-            </p>
+            <>
+              <p style={{ margin: 0 }}>
+                Add this record at your DNS host to prove you own <strong>{edge.domain}</strong>. AWS checks
+                automatically — this screen moves on by itself (checks continue even if you close the app).
+              </p>
+              <p className="muted" style={{ margin: 0, fontSize: 12 }}>
+                Already added it? DNS changes can take a few minutes (sometimes up to an hour) to become
+                visible — nothing else to do but wait. If your DNS host offers a proxy/CDN toggle for the
+                record (e.g. an orange cloud), turn it OFF: the check needs the plain record.
+              </p>
+            </>
           )}
           {edge.phase === "deploying" && (
             <p className="muted" style={{ margin: 0 }}>
