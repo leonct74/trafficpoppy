@@ -6,6 +6,7 @@
 import {
   CreateStackCommand,
   DeleteStackCommand,
+  DescribeStackEventsCommand,
   DescribeStackResourcesCommand,
   DescribeStacksCommand,
   UpdateStackCommand,
@@ -101,6 +102,14 @@ export async function deployEdge(
     ],
   };
   const existing = await describe(ctx.cfn);
+  // A failed create leaves ROLLBACK_COMPLETE, which can't be updated — delete + recreate
+  // (the same rule stack.ts follows for the core stack).
+  if (existing?.StackStatus === "ROLLBACK_COMPLETE") {
+    await ctx.cfn.send(new DeleteStackCommand({ StackName: edgeStackName }));
+    await waitUntilStackDeleteComplete({ client: ctx.cfn, maxWaitTime: 600 }, { StackName: edgeStackName });
+    await ctx.cfn.send(new CreateStackCommand(args));
+    return { operation: "CREATE" };
+  }
   if (!existing) {
     await ctx.cfn.send(new CreateStackCommand(args));
     return { operation: "CREATE" };
@@ -163,8 +172,24 @@ export async function edgeStatus(ctx: EdgeCtx): Promise<EdgeStatus> {
     records,
     distributionDomain,
     inProgress,
-    failureReason: phase === "failed" ? stack.StackStatusReason : undefined,
+    failureReason: phase === "failed" ? await firstFailure(ctx.cfn) : undefined,
   };
+}
+
+/** The root-cause event of a failed edge deploy (the rollback noise buries it). Best-effort. */
+async function firstFailure(cfn: CloudFormationClient): Promise<string | undefined> {
+  try {
+    const out = await cfn.send(new DescribeStackEventsCommand({ StackName: edgeStackName }));
+    const failures = (out.StackEvents ?? []).filter(
+      (e) =>
+        e.ResourceStatus?.endsWith("_FAILED") &&
+        e.ResourceStatusReason &&
+        !/resource creation cancelled/i.test(e.ResourceStatusReason),
+    );
+    return failures[failures.length - 1]?.ResourceStatusReason;
+  } catch {
+    return undefined;
+  }
 }
 
 /** Remove the edge stack. Idempotent; the core stack and all data stay untouched. */
