@@ -104,6 +104,7 @@
         "service": "cloudfront",
         "actions": [
           "CreateDistribution",
+          "CreateDistributionWithTags",
           "GetDistribution",
           "UpdateDistribution",
           "DeleteDistribution",
