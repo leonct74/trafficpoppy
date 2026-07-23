@@ -146,10 +146,14 @@ export function TrueReach(props: { suggestedDomain?: string; onStatus?: (edge: E
 
           {edge.records.map((r) => (
             <div key={r.purpose} className="card card-2 stack" style={{ marginBottom: 0, gap: 6 }}>
-              <div className="section-title" style={{ margin: 0 }}>
-                {r.purpose === "certificate-validation" ? "1 · Domain-ownership check" : "2 · Point your subdomain"}
+              <div className="spread">
+                <div className="section-title" style={{ margin: 0 }}>
+                  {r.purpose === "certificate-validation" ? "1 · Domain-ownership check" : "2 · Point your subdomain"}
+                </div>
+                {/* The record type is a dropdown pick in every DNS panel — show it,
+                    don't offer to copy it (founder feedback). */}
+                <span className="badge">{r.type}</span>
               </div>
-              <RecordLine label="Type" value={r.type} />
               <RecordLine label="Name" value={r.name} />
               <RecordLine label="Value" value={r.value} />
             </div>
