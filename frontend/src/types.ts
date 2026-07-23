@@ -68,6 +68,25 @@ export interface RangeStats {
   receiving: boolean;
 }
 
+/** A DNS record the owner must create at their DNS host. Mirrors backend/src/edge.ts. */
+export interface DnsRecord {
+  purpose: "certificate-validation" | "point-your-domain";
+  name: string;
+  type: string;
+  value: string;
+}
+
+/** The True Reach edge deployment's live state. Mirrors backend/src/edge.ts. */
+export interface EdgeStatus {
+  phase: "none" | "validating" | "deploying" | "ready" | "removing" | "failed";
+  stackStatus?: string;
+  domain?: string;
+  records: DnsRecord[];
+  distributionDomain?: string;
+  inProgress: boolean;
+  failureReason?: string;
+}
+
 /** The live-ticker read: views per minute over the last half hour, oldest first. */
 export interface LiveStats {
   siteId: string;

@@ -59,12 +59,27 @@ async function main() {
     logLevel: "warning",
   });
   const { buildTemplate, STACK_NAME, TABLE_NAME } = await import(pathToFileURL(outfile).href);
+
+  // The True Reach edge stack (P5) — same evaluate-and-embed treatment.
+  const edgeOutfile = join(staging, "edge-template.mjs");
+  await esbuild.build({
+    entryPoints: [join(root, "infra", "src", "edge-template.ts")],
+    outfile: edgeOutfile,
+    bundle: true,
+    platform: "node",
+    format: "esm",
+    target: "node20",
+    logLevel: "warning",
+  });
+  const { buildEdgeTemplate, EDGE_STACK_NAME, EDGE_REGION } = await import(pathToFileURL(edgeOutfile).href);
   rmSync(staging, { recursive: true, force: true });
 
   // Stable key order + 2-space indent: the template builder is pure, so these bytes (and
   // therefore templateKey) are identical on every machine at the same commit.
   const templateJson = JSON.stringify(buildTemplate(), null, 2);
   const templateKey = `template-${createHash("sha256").update(templateJson).digest("hex").slice(0, 16)}`;
+  const edgeTemplateJson = JSON.stringify(buildEdgeTemplate(), null, 2);
+  const edgeTemplateKey = `edge-${createHash("sha256").update(edgeTemplateJson).digest("hex").slice(0, 16)}`;
 
   // 2. Bundle the collector Lambda into ONE CJS file, then a deterministic zip. The AWS SDK
   //    is provided by the nodejs20.x runtime, so we mark it external — keeps the zip tiny
@@ -118,6 +133,10 @@ async function main() {
       `export const lambdaCodeKey = ${JSON.stringify(lambdaCodeKey)};`,
       `export const lambdaZipBase64 = ${JSON.stringify(lambdaZipBase64)};`,
       `export const probeZipBase64 = ${JSON.stringify(probeZipBase64)};`,
+      `export const edgeStackName = ${JSON.stringify(EDGE_STACK_NAME)};`,
+      `export const edgeRegion = ${JSON.stringify(EDGE_REGION)};`,
+      `export const edgeTemplateKey = ${JSON.stringify(edgeTemplateKey)};`,
+      `export const edgeTemplateJson = ${JSON.stringify(edgeTemplateJson)};`,
       `export const sourceCommit = ${JSON.stringify(git(["rev-parse", "HEAD"]))};`,
       "",
     ].join("\n"),

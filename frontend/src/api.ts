@@ -3,7 +3,7 @@
 // goes through the bridge.
 
 import { host } from "./host";
-import type { DeploymentStatus, LiveStats, Meta, RangeStats, Site, SiteStats } from "./types";
+import type { DeploymentStatus, EdgeStatus, LiveStats, Meta, RangeStats, Site, SiteStats } from "./types";
 
 export const api = {
   meta: (): Promise<Meta> => host.invokeBackend({ method: "GET", path: "/meta" }),
@@ -37,4 +37,10 @@ export const api = {
   /** The last-30-minutes ticker. */
   liveStats: (id: string): Promise<{ live: LiveStats }> =>
     host.invokeBackend({ method: "GET", path: `/sites/${encodeURIComponent(id)}/live` }),
+
+  /** True Reach (custom domain): live state, deploy, remove. */
+  edgeStatus: (): Promise<{ edge: EdgeStatus }> => host.invokeBackend({ method: "GET", path: "/truereach" }),
+  edgeDeploy: (domain: string): Promise<{ operation: string }> =>
+    host.invokeBackend({ method: "POST", path: "/truereach", body: { domain } }),
+  edgeRemove: (): Promise<{ removed: boolean }> => host.invokeBackend({ method: "DELETE", path: "/truereach" }),
 };

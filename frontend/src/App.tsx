@@ -6,7 +6,8 @@ import { Integrate } from "./Integrate";
 import { host, type AccessState } from "./host";
 import { RemovePanel } from "./RemovePanel";
 import { Sites } from "./Sites";
-import type { DeploymentStatus, Meta, Site } from "./types";
+import { TrueReach } from "./TrueReach";
+import type { DeploymentStatus, EdgeStatus, Meta, Site } from "./types";
 
 // Served from frontend/public → dist root; the same file the manifest declares as our icon.
 const icon = "./trafficpoppy-icon.png";
@@ -26,6 +27,8 @@ export function App() {
   const [openSite, setOpenSite] = useState<Site | null>(null);
   /** Within an open site: the Integrate (use-your-data) screen instead of the dashboard. */
   const [integrating, setIntegrating] = useState(false);
+  /** The True Reach edge state — when ready, snippets serve from the custom domain. */
+  const [edgeState, setEdgeState] = useState<EdgeStatus | null>(null);
   const pollRef = useRef<number | null>(null);
 
   /**
@@ -217,7 +220,19 @@ export function App() {
               for what you actually collect — cents a month at typical traffic, nothing when nobody visits.
             </div>
           </div>
-          {status?.collectorUrl && <Sites collectorUrl={status.collectorUrl} onOpen={setOpenSite} />}
+          {status?.collectorUrl && (
+            <Sites
+              // Once True Reach is live, every snippet serves first-party from the custom
+              // domain; until then (and again after a removal) the AWS address serves.
+              collectorUrl={
+                edgeState?.phase === "ready" && edgeState.domain
+                  ? `https://${edgeState.domain}`
+                  : status.collectorUrl
+              }
+              onOpen={setOpenSite}
+            />
+          )}
+          <TrueReach onStatus={setEdgeState} />
         </>
       )}
 
