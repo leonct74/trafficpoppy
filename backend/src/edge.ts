@@ -180,16 +180,18 @@ export async function edgeStatus(ctx: EdgeCtx, collectorUrlHost: string): Promis
     records.push({ purpose: "point-your-domain", name: `${domain}.`, type: "CNAME", value: distributionDomain });
   }
 
-  // ADVANCE: cert issued, no stack yet (or a failed one to replace) → deploy the distribution.
-  if (cert && certStatus === "ISSUED" && collectorUrlHost) {
-    if (!stack) {
-      await createStack(ctx, cert.domain, collectorUrlHost, cert.arn);
-      return { phase: "deploying", stackStatus: "CREATE_IN_PROGRESS", domain, records, inProgress: true };
-    }
-    if (stackStatus === "ROLLBACK_COMPLETE") {
-      await ctx.cfn.send(new DeleteStackCommand({ StackName: edgeStackName }));
-      return { phase: "deploying", stackStatus: "DELETE_IN_PROGRESS", domain, records, inProgress: true };
-    }
+  // A rolled-back stack beside a live certificate is always debris (an earlier failed
+  // attempt) — clear it rather than letting it shadow the real phase with a stale error.
+  if (cert && stack && stackStatus === "ROLLBACK_COMPLETE") {
+    await ctx.cfn.send(new DeleteStackCommand({ StackName: edgeStackName }));
+    const phase = certStatus === "PENDING_VALIDATION" ? "validating" : "deploying";
+    return { phase, stackStatus: "DELETE_IN_PROGRESS", domain, records, inProgress: true };
+  }
+
+  // ADVANCE: cert issued, no stack yet → deploy the distribution.
+  if (cert && certStatus === "ISSUED" && collectorUrlHost && !stack) {
+    await createStack(ctx, cert.domain, collectorUrlHost, cert.arn);
+    return { phase: "deploying", stackStatus: "CREATE_IN_PROGRESS", domain, records, inProgress: true };
   }
 
   let phase: EdgePhase;
