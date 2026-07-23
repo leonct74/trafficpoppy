@@ -145,6 +145,21 @@ describe("normalize — the gate before anything is counted", () => {
   });
 });
 
+describe("country — CloudFront-derived, country-level only (True Reach tier)", () => {
+  it("keeps a valid two-letter code and counts it", () => {
+    const ev = normalize({ s: "s1", p: "/x" }, { ...track, country: "IT" })!;
+    expect(ev.country).toBe("IT");
+    expect(counterKeys(ev, "2026-07-23").some((k) => k.sk === "country#IT")).toBe(true);
+  });
+
+  it("drops junk, lowercase, unknown-country and absent values — never guesses", () => {
+    for (const bad of ["ZZ", "it", "ITA", "1x", "", undefined]) {
+      const ev = normalize({ s: "s1", p: "/x" }, { ...track, country: bad as string | undefined })!;
+      expect(ev.country, `country=${String(bad)}`).toBeUndefined();
+    }
+  });
+});
+
 describe("counterKeys — the rows one pageview increments (DESIGN.md §2)", () => {
   const ev = normalize(
     { s: "s1", p: "/x", r: "https://t.co/a", q: "utm_source=tw", w: 400 },

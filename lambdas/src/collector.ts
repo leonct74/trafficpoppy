@@ -34,9 +34,17 @@ interface LambdaResponse {
 // real visitor's beacon dies silently. (Live lesson from the first ollydigital.com install.)
 const noContent = (): LambdaResponse => ({ statusCode: 204 });
 
-/** Reconstruct the origin the request arrived on — where t.js should POST back. */
+/**
+ * Reconstruct the origin the request arrived on — where t.js should POST back.
+ *
+ * Behind the True Reach CloudFront tier the Function URL sees CloudFront's Host, not the
+ * owner's custom domain — the distribution passes the real public hostname in the static
+ * origin header `x-tp-host` (set in the edge template). Preferring it keeps t.js posting
+ * first-party, which is the whole point of that tier.
+ */
 function originOf(event: FunctionUrlEvent): string {
-  const host = event.headers?.["host"] ?? event.headers?.["Host"] ?? "";
+  const host =
+    event.headers?.["x-tp-host"] ?? event.headers?.["host"] ?? event.headers?.["Host"] ?? "";
   const proto = event.headers?.["x-forwarded-proto"] ?? "https";
   return host ? `${proto}://${host}` : "";
 }
@@ -78,6 +86,8 @@ export async function handleEvent(event: FunctionUrlEvent, deps: HandlerDeps): P
       const ev = normalize(readBody(event), {
         userAgent: headers["user-agent"] ?? event.requestContext?.http?.userAgent,
         doNotTrack: isDoNotTrack(headers),
+        // Present only when CloudFront (True Reach tier) fronted the request.
+        country: headers["cloudfront-viewer-country"],
       });
       if (ev) {
         const ip = event.requestContext?.http?.sourceIp ?? "";

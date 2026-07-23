@@ -1,7 +1,7 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { computeMovers, costApprox, Dashboard } from "./Dashboard";
+import { computeMovers, costApprox, countryLabel, Dashboard } from "./Dashboard";
 import { api } from "./api";
 import type { RangeStats } from "./types";
 
@@ -35,6 +35,7 @@ function range(over: Partial<RangeStats> = {}): RangeStats {
     utmSources: [{ key: "newsletter", count: 5 }],
     utmCampaigns: [],
     utmMediums: [],
+    countries: [],
     hours: Array.from({ length: 24 }, (_, h) => (h === 9 ? 7 : 0)),
     prev: { views: 6, uniques: 6, topPages: [{ key: "/old-post", count: 5 }], topReferrers: [] },
     receiving: true,
@@ -74,6 +75,17 @@ describe("Dashboard", () => {
     render(<Dashboard site={site} onBack={() => {}} />);
     expect(await screen.findByText(/top movers/i)).toBeInTheDocument();
     expect(screen.getByText("/old-post")).toBeInTheDocument(); // fell to zero — still shown
+  });
+
+  it("shows Countries only when geo data exists (True Reach), with flag + name", async () => {
+    render(<Dashboard site={site} onBack={() => {}} />);
+    await screen.findAllByText("12");
+    expect(screen.queryByText(/countries/i)).not.toBeInTheDocument(); // free tier: no panel
+
+    mocked.rangeStats.mockResolvedValue({ range: range({ countries: [{ key: "IT", count: 7 }] }) });
+    await userEvent.click(screen.getByRole("tab", { name: /30 days/i }));
+    expect(await screen.findByText(/countries/i)).toBeInTheDocument();
+    expect(screen.getByText(/🇮🇹 Italy/)).toBeInTheDocument();
   });
 
   it("renders the hour-of-day strip with per-hour tooltips", async () => {
@@ -145,6 +157,13 @@ describe("computeMovers — what changed vs the previous window", () => {
       { key: "/hot", count: 10, delta: 10 },
       { key: "/gone", count: 0, delta: -7 },
     ]);
+  });
+});
+
+describe("countryLabel", () => {
+  it("renders flag + English name, and degrades to flag + code for unknown regions", () => {
+    expect(countryLabel("IT")).toBe("🇮🇹 Italy");
+    expect(countryLabel("DE")).toBe("🇩🇪 Germany");
   });
 });
 

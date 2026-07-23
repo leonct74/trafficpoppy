@@ -30,6 +30,12 @@ export interface RequestContext {
   userAgent?: string;
   /** True when GPC or DNT asked us not to track. */
   doNotTrack: boolean;
+  /**
+   * ISO 3166-1 alpha-2 country, from `CloudFront-Viewer-Country` — present only on the
+   * True Reach (custom-domain) tier, where CloudFront derives it at the edge (DESIGN.md
+   * §12). The free Function-URL path carries no geo header and we NEVER look up the IP.
+   */
+  country?: string;
 }
 
 /** A normalized, privacy-reduced event ready to be turned into counter increments. */
@@ -41,6 +47,8 @@ export interface NormalizedEvent {
   os: string;
   size: string;
   utm: Partial<Record<(typeof UTM_ALLOWLIST)[number], string>>;
+  /** Two-letter country code (True Reach tier only) — country-level, never finer. */
+  country?: string;
 }
 
 const MAX_SITE_ID = 64;
@@ -149,6 +157,12 @@ export function normalize(raw: RawEvent, ctx: RequestContext, ownHost?: string):
   // Site ids are opaque short tokens we mint; reject anything that isn't [A-Za-z0-9_-].
   if (!/^[A-Za-z0-9_-]+$/.test(siteId)) return null;
 
+  // Strictly a two-letter code (CloudFront sends "ZZ"/unknown junk sometimes; drop it).
+  const country =
+    typeof ctx.country === "string" && /^[A-Z]{2}$/.test(ctx.country) && ctx.country !== "ZZ"
+      ? ctx.country
+      : undefined;
+
   return {
     siteId,
     path,
@@ -157,6 +171,7 @@ export function normalize(raw: RawEvent, ctx: RequestContext, ownHost?: string):
     os: osFamily(ctx.userAgent),
     size: sizeBucket(raw.w),
     utm: allowlistedUtm(raw.q),
+    country,
   };
 }
 
@@ -193,6 +208,7 @@ export function counterKeys(ev: NormalizedEvent, day: string): CounterKey[] {
     { pk, sk: `size#${ev.size}` },
   ];
   if (ev.referrerHost) keys.push({ pk, sk: `ref#${ev.referrerHost}` });
+  if (ev.country) keys.push({ pk, sk: `country#${ev.country}` });
   for (const key of UTM_ALLOWLIST) {
     const v = ev.utm[key];
     if (v) keys.push({ pk, sk: `${key}#${v}` });

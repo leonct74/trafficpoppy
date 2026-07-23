@@ -177,6 +177,8 @@ export class SiteRegistry {
       utmSources: pick("utm_source#", 10),
       utmCampaigns: pick("utm_campaign#", 10),
       utmMediums: pick("utm_medium#", 10),
+      // Geography (True Reach tier) — empty until CloudFront fronts the collector.
+      countries: pick("country#", 12),
       // Hour-of-day distribution (UTC) — 24 buckets, from the collector's hour# counters.
       hours: Array.from({ length: 24 }, (_, h) => sums.get(`hour#${String(h).padStart(2, "0")}`) ?? 0),
       prev: prevDays.length > 0 ? this.prevWindow(perPrevDay) : undefined,
@@ -253,6 +255,8 @@ export interface RangeStats {
   utmSources: { key: string; count: number }[];
   utmCampaigns: { key: string; count: number }[];
   utmMediums: { key: string; count: number }[];
+  /** Country-level geography (True Reach tier) — empty on the free Function-URL path. */
+  countries: { key: string; count: number }[];
   /** Views per UTC hour-of-day, 24 buckets (index = hour). */
   hours: number[];
   /** The immediately-preceding window of the same length — for Δ% and top movers. */

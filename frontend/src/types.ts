@@ -54,6 +54,8 @@ export interface RangeStats {
   utmSources: { key: string; count: number }[];
   utmCampaigns: { key: string; count: number }[];
   utmMediums: { key: string; count: number }[];
+  /** Country-level geography (True Reach tier) — empty on the free Function-URL path. */
+  countries: { key: string; count: number }[];
   /** Views per UTC hour-of-day, 24 buckets (index = hour). */
   hours: number[];
   /** The immediately-preceding window of the same length — for Δ% and top movers. */

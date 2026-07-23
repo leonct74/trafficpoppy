@@ -165,6 +165,13 @@ export function Dashboard(props: { site: Site; onBack: () => void; onIntegrate?:
       {range?.receiving && (
         <>
           <Movers current={range.topPages} prev={range.prev?.topPages} what="pages" />
+          {range.countries.length > 0 && (
+            <BarList
+              title="Countries"
+              rows={range.countries.map((c) => ({ ...c, key: countryLabel(c.key) }))}
+              empty="—"
+            />
+          )}
           <div className="grid-2">
             <BarList title="Top pages" rows={range.topPages} empty="No pages yet" />
             <BarList title="Referrers" rows={range.topReferrers} empty="Direct visits only so far" />
@@ -342,6 +349,17 @@ function LivePulse(props: { live: LiveStats | null }) {
       <span className="dot" /> {v > 0 ? `${v.toLocaleString()} live` : "quiet now"}
     </span>
   );
+}
+
+/** "IT" → "🇮🇹 Italy" — flag from regional-indicator pairs, name from the platform locale data. */
+export function countryLabel(code: string): string {
+  const flag = String.fromCodePoint(...[...code].map((c) => 0x1f1a5 + c.charCodeAt(0)));
+  try {
+    const name = new Intl.DisplayNames(["en"], { type: "region" }).of(code);
+    return `${flag} ${name ?? code}`;
+  } catch {
+    return `${flag} ${code}`;
+  }
 }
 
 /** Pages rising and falling vs the previous window — the "what changed?" read. */
