@@ -392,3 +392,28 @@ materializes.
   sum of DAILY uniques — cross-day identity is impossible by design (§4) and the UI says so.
 - Current: **P3 — premium-quality reports & polish** (§13). Owed observation: first daily
   salt rotation (uniques reset at UTC midnight) — check next session.
+- 2026-07-23 — **P3 complete** (Integrate screen shipped; salt rotation observed live:
+  per-day uniques reset across two UTC midnights). **P4 partial:** win32-x64 cross-build +
+  both platform packages proven; abuse cap surfaced; mailpoppy.com live as second site
+  (multi-site verified); agentspoppy.com registered, snippet pending. Owed before listing:
+  certify re-run + screenshots + zip hosting.
+- 2026-07-23 — **P5 (True Reach) STARTED — implementation decisions:**
+  (1) **Edge stack** `TrafficPoppyEdgeStack` deploys to **us-east-1** (the only region
+  CloudFront accepts ACM certs from): certificate (DNS-validated) + distribution fronting
+  the collector Function URL. (2) **DNS is manual-first**: the app shows the two CNAMEs
+  (ACM validation, stats.<domain> → *.cloudfront.net) with copy buttons — works with any
+  DNS host, no Route53 grants; auto-Route53 can come later. (3) **tagged-as-self scoping**:
+  acm/cloudfront ARNs are unguessable, so those grants use the SDK's `tagged-as-self`
+  sentinel (session policy conditions on our attribution tag; stack tags propagate to cert
+  + distribution) — rating stays amber, no beyond-own findings. (4) The distribution uses
+  legacy **ForwardedValues, not an OriginRequestPolicy**: ORPs can't be tagged, so
+  tagged-as-self could never authorize mutating them; the whitelist (content-type, UA,
+  origin, dnt, sec-gpc, cloudfront-viewer-country — never Host) lives inside the taggable
+  distribution. (5) The owner's public hostname reaches the collector via the static
+  **`x-tp-host` origin header** (Host must stay the Function URL's own for routing);
+  originOf() prefers it so t.js posts first-party. (6) **Country counters** `country#XX`
+  from CloudFront-Viewer-Country only — strictly validated alpha-2, ZZ dropped, never an
+  IP lookup; dashboard Countries panel renders only when geo data exists. (7) Checkout/
+  entitlement DECOUPLED: mechanics ship first for founder dogfood; §12 checkout wraps
+  later. Shipped so far: country pipeline + edge template + manifest (amber). Next: sidecar
+  edge deploy/status/teardown + True Reach screen (hostname, CNAMEs, background-resume).

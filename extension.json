@@ -21,7 +21,7 @@
           "DescribeStackEvents",
           "DescribeStackResources"
         ],
-        "resourceScope": "arn:aws:cloudformation:*:*:stack/TrafficPoppyStack/*"
+        "resourceScope": "arn:aws:cloudformation:*:*:stack/TrafficPoppy*"
       },
       {
         "service": "dynamodb",
@@ -88,6 +88,29 @@
         "service": "s3",
         "actions": ["PutObject", "GetObject", "DeleteObject"],
         "resourceScope": "arn:aws:s3:::trafficpoppy-deploy-*/*"
+      },
+      {
+        "service": "acm",
+        "actions": [
+          "RequestCertificate",
+          "DescribeCertificate",
+          "DeleteCertificate",
+          "AddTagsToCertificate",
+          "ListTagsForCertificate"
+        ],
+        "resourceScope": "tagged-as-self"
+      },
+      {
+        "service": "cloudfront",
+        "actions": [
+          "CreateDistribution",
+          "GetDistribution",
+          "UpdateDistribution",
+          "DeleteDistribution",
+          "TagResource",
+          "ListTagsForResource"
+        ],
+        "resourceScope": "tagged-as-self"
       }
     ],
     "limits": null
