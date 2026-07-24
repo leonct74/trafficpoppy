@@ -417,3 +417,31 @@ materializes.
   entitlement DECOUPLED: mechanics ship first for founder dogfood; §12 checkout wraps
   later. Shipped so far: country pipeline + edge template + manifest (amber). Next: sidecar
   edge deploy/status/teardown + True Reach screen (hostname, CNAMEs, background-resume).
+- 2026-07-25 — **P5 (True Reach) LIVE-VERIFIED end-to-end on ollydigital.com.** Real browser
+  on the live site: first-party snippet in the DOM, `https://stats.ollydigital.com/t.js`
+  serves over HTTPS with an ACM cert whose SAN is the domain, `sendBeacon` to
+  `stats.ollydigital.com/e` returns 204, no GPC/DNT → the hit counts, and served t.js posts
+  first-party (no cloudfront.net / lambda-url leaks). Country accumulation confirmed live —
+  two VPN exits (NL, IE) show side-by-side in the Countries panel; `country#XX` rows ADD
+  independently, never overwrite, no TTL. Two gotchas cost real time and are now locked:
+  (a) **CloudFormation's ACM handler requests the certificate WITHOUT tags** (CloudTrail:
+  `invokedBy cloudformation.amazonaws.com`, no RequestTag), so the birth-tag session-policy
+  condition can never be satisfied via CFN → the **sidecar requests the cert itself**
+  (born-tagged, IdempotencyToken) and passes the ARN to the distribution stack as a
+  `CertificateArn` parameter; the edge template is CloudFront-only. (b) **Local OS DNS cache
+  lags public resolvers by minutes** — `dig @1.1.1.1` resolved while the same machine's
+  `curl`/browser still couldn't; verify first-party endpoints with `--resolve` until the
+  stub cache refreshes, and tell owners their browser may lag too.
+- 2026-07-25 — **Per-domain snippet fix (bug found in founder review).** True Reach is
+  per-registrable-domain: `stats.ollydigital.com` is first-party ONLY for ollydigital.com.
+  The Sites list had applied the live True Reach origin as a **blanket origin for every
+  site**, so mailpoppy.com / agentspoppy.com were shown a snippet pointing at
+  `stats.ollydigital.com` — cross-domain (third-party, ad-blockable), domain-conflating, and
+  falsely premium-looking. Fixed: each site's snippet uses the True Reach origin only when
+  `isFirstPartyFor(site.domain, edgeDomain)` (edge domain === or a subdomain of the site's
+  registrable domain; suffix-spoofing guarded), else the free Function URL; the row shows a
+  **"True Reach" badge** when first-party and a free-tier/upsell hint otherwise. Frontend-only
+  (no redeploy); 6 tests added, suite green. **Open:** the edge model holds ONE domain
+  (`edgeStackName` singleton, single `EdgeStatus.domain`) — giving other sites geo needs
+  **multi-domain True Reach** (one cert+distribution per premium domain), a P5+ build to be
+  designed alongside the §12 per-domain-vs-per-account pricing decision.

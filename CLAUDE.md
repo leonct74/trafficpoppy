@@ -79,9 +79,12 @@ decisions: `DESIGN.md` §11–13.
 
 ## Status
 
-P0–P2 complete (DESIGN.md §14): collector live-verified on a real site, leaves-no-trace
-**certified** (zero residuals), dashboard MVP shipped. **Current phase: P3 — premium-quality
-reports & polish.**
+P0–P3 complete + P5 (True Reach) live-verified (DESIGN.md §14): collector live-verified on a
+real site, leaves-no-trace **certified** (zero residuals), dashboard MVP + premium reports
+shipped, and **True Reach verified end-to-end on ollydigital.com** (first-party HTTPS
+collection + per-country geo accumulation, own AWS). **Open before catalogue listing:**
+multi-domain True Reach (edge model is single-domain today), P5 checkout/entitlement (§12,
+decoupled), a fresh certify + screenshots.
 Remote: `https://github.com/leonct74/trafficpoppy.git`. Before the repo ever goes public,
 run the pre-public checklist in `agentspoppy/docs/ROADMAP.md` (history secret scan, FSL
 headers, no personal paths).
