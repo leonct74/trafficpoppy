@@ -222,13 +222,12 @@ export function App() {
           </div>
           {status?.collectorUrl && (
             <Sites
-              // Once True Reach is live, every snippet serves first-party from the custom
-              // domain; until then (and again after a removal) the AWS address serves.
-              collectorUrl={
-                edgeState?.phase === "ready" && edgeState.domain
-                  ? `https://${edgeState.domain}`
-                  : status.collectorUrl
-              }
+              // Every site's snippet defaults to the AWS Function URL. True Reach is
+              // per-domain: a custom subdomain (stats.ollydigital.com) is first-party for
+              // ONLY its own registrable domain, so Sites applies it per-site — never as a
+              // blanket origin for every site (that would point one site at another's domain).
+              collectorUrl={status.collectorUrl}
+              trueReachDomain={edgeState?.phase === "ready" ? edgeState.domain : undefined}
               onOpen={setOpenSite}
             />
           )}

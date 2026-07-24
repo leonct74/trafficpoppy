@@ -5,11 +5,31 @@ import { CopyButton } from "./CopyButton";
 import type { Site, SiteStats } from "./types";
 
 /**
- * The Sites screen (DESIGN.md §7.1): add a site → get the one-line snippet with a copy
- * button → see whether data is arriving. `collectorUrl` is the deployed Function URL — the
- * origin baked into every snippet.
+ * Does `edgeDomain` (e.g. stats.ollydigital.com) collect first-party for a site whose own
+ * address is `siteDomain` (e.g. ollydigital.com)? True only when the edge domain IS, or is a
+ * subdomain of, the site's registrable domain — never across two different domains. This is
+ * what keeps True Reach per-site: one custom subdomain can't be first-party for every site.
  */
-export function Sites(props: { collectorUrl: string; onOpen?: (site: Site) => void }) {
+export function isFirstPartyFor(siteDomain: string | undefined, edgeDomain: string): boolean {
+  if (!siteDomain) return false;
+  const site = siteDomain
+    .trim()
+    .toLowerCase()
+    .replace(/^https?:\/\//, "")
+    .replace(/^www\./, "")
+    .replace(/[/:].*$/, "");
+  if (!site) return false;
+  const edge = edgeDomain.trim().toLowerCase();
+  return edge === site || edge.endsWith(`.${site}`);
+}
+
+/**
+ * The Sites screen (DESIGN.md §7.1): add a site → get the one-line snippet with a copy
+ * button → see whether data is arriving. `collectorUrl` is the deployed AWS Function URL —
+ * the free-tier origin. `trueReachDomain`, when set, is the live True Reach custom subdomain;
+ * it's applied per-site, only to the site it's actually first-party for.
+ */
+export function Sites(props: { collectorUrl: string; trueReachDomain?: string; onOpen?: (site: Site) => void }) {
   const [sites, setSites] = useState<Site[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [name, setName] = useState("");
@@ -57,7 +77,14 @@ export function Sites(props: { collectorUrl: string; onOpen?: (site: Site) => vo
       ) : (
         <div className="stack">
           {sites.map((s) => (
-            <SiteRow key={s.id} site={s} collectorUrl={props.collectorUrl} onRemoved={load} onOpen={props.onOpen} />
+            <SiteRow
+              key={s.id}
+              site={s}
+              collectorUrl={props.collectorUrl}
+              trueReachDomain={props.trueReachDomain}
+              onRemoved={load}
+              onOpen={props.onOpen}
+            />
           ))}
         </div>
       )}
@@ -96,11 +123,16 @@ export function Sites(props: { collectorUrl: string; onOpen?: (site: Site) => vo
 function SiteRow(props: {
   site: Site;
   collectorUrl: string;
+  trueReachDomain?: string;
   onRemoved: () => void;
   onOpen?: (site: Site) => void;
 }) {
-  const { site, collectorUrl } = props;
-  const origin = collectorUrl.replace(/\/+$/, "");
+  const { site, collectorUrl, trueReachDomain } = props;
+  // First-party only when the True Reach subdomain belongs to THIS site's domain.
+  const firstParty = !!trueReachDomain && isFirstPartyFor(site.domain, trueReachDomain);
+  // A True Reach edge exists, but for a different domain than this site → upsell hint.
+  const canUpsell = !!trueReachDomain && !firstParty;
+  const origin = (firstParty ? `https://${trueReachDomain}` : collectorUrl).replace(/\/+$/, "");
   const snippet = `<script defer src="${origin}/t.js" data-site="${site.id}"></script>`;
   const [stats, setStats] = useState<SiteStats | null>(null);
   const [confirming, setConfirming] = useState(false);
@@ -129,7 +161,12 @@ function SiteRow(props: {
       <div className="spread">
         <div>
           <strong>{site.name}</strong>{" "}
-          {site.domain && <span className="muted mono" style={{ fontSize: 12 }}>{site.domain}</span>}
+          {site.domain && <span className="muted mono" style={{ fontSize: 12 }}>{site.domain}</span>}{" "}
+          {firstParty && (
+            <span className="badge ok" title={`First-party via ${trueReachDomain}`}>
+              True Reach
+            </span>
+          )}
         </div>
         {stats?.receiving ? (
           <span className="badge ok">
@@ -152,6 +189,18 @@ function SiteRow(props: {
           </code>
           <CopyButton text={snippet} label="snippet" />
         </div>
+        {firstParty ? (
+          <p className="muted" style={{ margin: "6px 0 0", fontSize: 12 }}>
+            Served first-party from <span className="mono">{trueReachDomain}</span> — invisible to ad blockers, with
+            country stats.
+          </p>
+        ) : canUpsell ? (
+          <p className="muted" style={{ margin: "6px 0 0", fontSize: 12 }}>
+            Free tier — served from your AWS address. Set up True Reach on a subdomain of{" "}
+            <span className="mono">{site.domain || "this site"}</span> for ad-blocker-immune collection and country
+            stats.
+          </p>
+        ) : null}
       </div>
 
       {stats && stats.receiving && (
