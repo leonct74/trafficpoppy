@@ -142,6 +142,68 @@ execution role**, so unlike VM-Poppy this poppy cannot be IAM-free. Same class a
   cross-site linking, data sale — and no "trust us": the mechanism is open source.
 - GPC/DNT honored (§3). UA reduced to coarse browser+OS families before storage.
 
+## 6b. Consent-gated retention windows — *PROPOSED, NOT DECIDED* (founder idea 2026-07-25)
+
+**Status: proposal only.** Nothing here is built or committed. Needs a founder go/no-go **and
+a lawyer's review** before any code. The default posture in §4/§6 (daily salt, banner-free)
+stays the product's spine either way.
+
+**The want:** returning-visitor / multi-day audience insight, which §4 makes cryptographically
+impossible today. **The mechanism:** let the owner extend the salt-rotation window beyond 24 h
+for visitors who have *consented*, so a longer-lived pseudonymous hash can dedupe across days.
+
+**THE LOAD-BEARING RULE — consent is the trigger; geo only decides whether to ask.**
+The founder's first shape (country alone unlocks a longer window — EU short, rest-of-world
+long) is **rejected, and must not be reintroduced**, because:
+- Country comes from IP geolocation, which VPNs/proxies defeat — *verified live on 2026-07-25:
+  a UK founder via VPN registered as IE*. A German visitor on a US VPN would classify as US and
+  be tracked for a year without consent. **The failure mode is inverted: the more
+  privacy-conscious the visitor, the weaker the protection they get.**
+- "Non-EU = unrestricted" is false and decaying (UK PECR, CH, BR, CA, US state laws). A shipped
+  country list is a *legal claim we must maintain forever*; stale list ⇒ customers non-compliant.
+- It converts a **structural guarantee** ("cryptographically incapable") into a
+  **configuration-dependent** one, and moves liability toward us — we'd be shipping compliance
+  logic, not a neutral tool.
+
+Under the rule, geo misclassification fails **safe**: a misclassified visitor is merely *not
+asked*, and stays on the daily salt.
+
+**Data model** (small delta — the day partition and all pageview counters are untouched):
+- Salt rows generalize `pk="salt", sk=<day>` → `sk="<bucket>#<window>"`, where
+  `window = floor(epochDay / saltDays)`. **Old salts are still destroyed on rotation** — the
+  unlinkability claim depends on it and is non-negotiable.
+- Dedup rows `site#<id>#uniq#<day>` → `site#<id>#uniq#<bucket>#<window>`, TTL'd to window end.
+- **Free new-vs-returning:** the conditional put already tells us if the hash existed — if it
+  did, the visitor is *returning within the window*. `total#new` / `total#returning` counters
+  need no extra identity retention beyond what the window already implies.
+- Per-site config row: buckets + `saltDays` + per-region mode; unknown country ⇒ strictest.
+
+**Fail-safe rules (all three mandatory):**
+1. Undetectable/unknown country ⇒ **strictest bucket**.
+2. **GPC/DNT still means count nothing** — never overridable by owner config.
+3. Conservative defaults; looser settings need an explicit owner opt-in carrying the plain
+   warning *"this makes you responsible for a consent banner."*
+
+**Constraints:** country needs `CloudFront-Viewer-Country` ⇒ **True Reach tier only** (good
+monetization alignment: premium tier unlocks the premium metric). The tracker's **~1 KB budget
+test** caps the consent-read to a few bytes (documented localStorage key + a tiny global for
+CMPs to call; storing the visitor's *consent choice* is itself consent-exempt).
+
+**Costs to accept, stated honestly:** an extended salt **is personal data at rest** (stable
+pseudonymous ID + behaviour), pulling the owner into data-subject-rights territory they are
+currently exempt from — incl. the Art. 11 problem that erasure can't be honoured without
+recomputing the hash from an IP we never store. And "unique visitors" stops being one number:
+the dashboard must label windows explicitly, never blend them.
+
+**Open for counsel:** (a) is the consent-exempt status of the consent-record key safe in every
+target market; (b) does consent-gated extension trigger a DPIA for typical owners; (c) Art. 11
+posture when erasure is architecturally impossible; (d) can we ship *any* jurisdiction list
+without becoming an advice-giver.
+
+**Recommendation on record:** build as *consent-gated returning visitors*, True Reach-only,
+**off by default**; geo used solely to suppress unnecessary banners. This keeps "banner-free by
+default" literally true for every customer who does not opt in — the claim the product rests on.
+
 ## 7. Dashboard (MVP screens)
 
 1. **Sites** — add a site (name + domain) → get the snippet (copy button); per-site status
@@ -445,3 +507,9 @@ materializes.
   (`edgeStackName` singleton, single `EdgeStatus.domain`) — giving other sites geo needs
   **multi-domain True Reach** (one cert+distribution per premium domain), a P5+ build to be
   designed alongside the §12 per-domain-vs-per-account pricing decision.
+- 2026-07-25 — **§6b recorded: consent-gated retention windows (PROPOSED, not decided).**
+  Founder idea for multi-day/returning-visitor insight. Load-bearing rule: **consent is the
+  trigger, geo only decides whether to ask** — the geo-alone variant is rejected on record
+  (VPN misclassification inverts protection; "non-EU = unrestricted" is false and decaying; it
+  would turn a structural guarantee into a configuration). True Reach-only, off by default.
+  Needs founder go/no-go **and counsel** before any code.
