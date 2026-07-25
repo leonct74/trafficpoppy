@@ -178,6 +178,21 @@ asked*, and stays on the daily salt.
   need no extra identity retention beyond what the window already implies.
 - Per-site config row: buckets + `saltDays` + per-region mode; unknown country ⇒ strictest.
 
+**What each visitor state does — consent NEVER gates basic measurement:**
+
+| Visitor state | Salt | Counted (views, daily uniques, referrers, geo…) | In "returning visitors" |
+|---|---|---|---|
+| Consents | extended (N days) | yes | yes |
+| **Declines** | **24 h — today's default** | **yes, fully** | no |
+| Never asked (geo/module off) | 24 h | yes | no |
+| GPC / DNT | — | **nothing at all** (§3, non-overridable) | no |
+
+A decline costs the owner **one metric for that visitor, not the visitor** — totals stay
+complete and accurate. This is a hard advantage over cookie-based analytics, where a decline
+makes the visitor vanish and the totals wrong. The floor is always "today's product, working
+exactly as it does now"; consent only ever *adds* a capability. Sales line: *"worst case, you
+still have everything you have today."*
+
 **Fail-safe rules (all three mandatory):**
 1. Undetectable/unknown country ⇒ **strictest bucket**.
 2. **GPC/DNT still means count nothing** — never overridable by owner config.
