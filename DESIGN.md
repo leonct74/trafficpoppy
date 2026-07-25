@@ -149,8 +149,31 @@ a lawyer's review** before any code. The default posture in §4/§6 (daily salt,
 stays the product's spine either way.
 
 **The want:** returning-visitor / multi-day audience insight, which §4 makes cryptographically
-impossible today. **The mechanism:** let the owner extend the salt-rotation window beyond 24 h
-for visitors who have *consented*, so a longer-lived pseudonymous hash can dedupe across days.
+impossible today. **The mechanism:** the salt-rotation window becomes owner-configurable, so a
+longer-lived pseudonymous hash can dedupe across days.
+
+**TWO TIERS (founder decision 2026-07-25) — the banner is optional, not required:**
+
+| Tier | Window | Consent banner | Who it's for |
+|---|---|---|---|
+| **Baseline** | **1–7 days, owner-chosen, default 1** | **none needed** | everyone — works out of the box |
+| **Extended** | beyond 7 days (30/90/365) | required | owners who already run a CMP |
+
+**Why the baseline needs no banner — the load-bearing legal point.** §6's banner-free claim
+rests on *nothing being stored on, or read from, the visitor's device* (ePrivacy Art. 5(3)).
+The salt lives **server-side**; the device is never touched at 1 day or at 7. So window length
+does not trigger ePrivacy at all, and GDPR sets **no numeric rule** for anonymous
+returning-visitor counting — only storage limitation (Art. 5(1)(e), "no longer than
+necessary"), a purpose judgement rather than a fixed number.
+
+What *does* scale with the window is the GDPR-side claim in §6 that there is "no personal data
+at rest": during a live window the hash can single out a visitor across days, which is
+pseudonymous, not anonymous (Recital 26). That risk is bounded and proportional — hence the
+**7-day hard cap on the consent-free tier and a default of 1 day**. Beyond 7 days the honest
+answer is a consent banner.
+
+This is why the module is useful even to owners who never want a banner: they get
+returning-visitor data inside a short window and stay exactly as compliant as today.
 
 **THE LOAD-BEARING RULE — consent is the trigger; geo only decides whether to ask.**
 The founder's first shape (country alone unlocks a longer window — EU short, rest-of-world
@@ -166,7 +189,7 @@ long) is **rejected, and must not be reintroduced**, because:
   logic, not a neutral tool.
 
 Under the rule, geo misclassification fails **safe**: a misclassified visitor is merely *not
-asked*, and stays on the daily salt.
+asked*, and stays on the baseline window (≤ 7 days) — which needs no consent anyway.
 
 **Data model** (small delta — the day partition and all pageview counters are untouched):
 - Salt rows generalize `pk="salt", sk=<day>` → `sk="<bucket>#<window>"`, where
@@ -180,29 +203,41 @@ asked*, and stays on the daily salt.
 
 **What each visitor state does — consent NEVER gates basic measurement:**
 
-| Visitor state | Salt | Counted (views, daily uniques, referrers, geo…) | In "returning visitors" |
+| Visitor state | Salt window | Counted (views, daily uniques, referrers, geo…) | In "returning visitors" |
 |---|---|---|---|
-| Consents | extended (N days) | yes | yes |
-| **Declines** | **24 h — today's default** | **yes, fully** | no |
-| Never asked (geo/module off) | 24 h | yes | no |
+| Consents | extended (30/90/365 d) | yes | yes, across the long window |
+| **Declines** | **baseline (1–7 d)** | **yes, fully** | **yes, within the baseline window** |
+| Never asked (no banner / module off) | baseline (1–7 d) | yes | yes, within the baseline window |
 | GPC / DNT | — | **nothing at all** (§3, non-overridable) | no |
 
-A decline costs the owner **one metric for that visitor, not the visitor** — totals stay
-complete and accurate. This is a hard advantage over cookie-based analytics, where a decline
-makes the visitor vanish and the totals wrong. The floor is always "today's product, working
-exactly as it does now"; consent only ever *adds* a capability. Sales line: *"worst case, you
-still have everything you have today."*
+A decline never costs the owner a visitor, and — unlike the first draft of this section — it
+no longer costs them the metric either: it only **shortens the window** from months to ≤ 7
+days. Totals stay complete and accurate. That is a hard advantage over cookie-based analytics,
+where a decline makes the visitor vanish and the totals wrong. The floor is always "today's
+product plus a short returning-visitor window"; consent only ever *widens* it. Sales line:
+*"worst case, you still have everything you have today."*
 
 **Fail-safe rules (all three mandatory):**
 1. Undetectable/unknown country ⇒ **strictest bucket**.
 2. **GPC/DNT still means count nothing** — never overridable by owner config.
-3. Conservative defaults; looser settings need an explicit owner opt-in carrying the plain
-   warning *"this makes you responsible for a consent banner."*
+3. Conservative defaults (**baseline = 1 day**). Raising it inside 1–7 days is a free choice
+   needing no warning — it stays banner-free. Crossing **7 days** is a hard gate: explicit
+   owner opt-in carrying the plain warning *"beyond 7 days you are responsible for a consent
+   banner,"* and the extended window then applies **only** to visitors who consented.
+4. The UI states the trade in plain words at the point of choice — e.g. *"7 days: you'll see
+   visitors returning within a week; a visitor stays linkable for up to 7 days."*
 
-**Constraints:** country needs `CloudFront-Viewer-Country` ⇒ **True Reach tier only** (good
-monetization alignment: premium tier unlocks the premium metric). The tracker's **~1 KB budget
-test** caps the consent-read to a few bytes (documented localStorage key + a tiny global for
-CMPs to call; storing the visitor's *consent choice* is itself consent-exempt).
+**Tier split — note the baseline needs NO geo, so it is not True Reach-only:**
+- **Baseline (1–7 d) works on the FREE tier.** It is pure server-side salt arithmetic: no
+  country header, no consent signal, no banner. Every user gets returning-visitor data out of
+  the box — a real broadening of the free product, not a premium gate.
+- **Geo (deciding where a banner is even needed) requires `CloudFront-Viewer-Country` ⇒ True
+  Reach only.** Same for the extended tier's regional targeting. Monetization alignment holds:
+  the premium tier unlocks *long* windows and the geo smarts, not the basic metric.
+
+The tracker's **~1 KB budget test** caps the consent-read to a few bytes (documented
+localStorage key + a tiny global for CMPs to call; storing the visitor's *consent choice* is
+itself consent-exempt). The baseline tier adds **zero** tracker bytes.
 
 **Costs to accept, stated honestly:** an extended salt **is personal data at rest** (stable
 pseudonymous ID + behaviour), pulling the owner into data-subject-rights territory they are
@@ -210,14 +245,21 @@ currently exempt from — incl. the Art. 11 problem that erasure can't be honour
 recomputing the hash from an IP we never store. And "unique visitors" stops being one number:
 the dashboard must label windows explicitly, never blend them.
 
-**Open for counsel:** (a) is the consent-exempt status of the consent-record key safe in every
-target market; (b) does consent-gated extension trigger a DPIA for typical owners; (c) Art. 11
-posture when erasure is architecturally impossible; (d) can we ship *any* jurisdiction list
-without becoming an advice-giver.
+**Open for counsel — (e) is now the priority question:**
+(a) is the consent-exempt status of the consent-record key safe in every target market;
+(b) does consent-gated extension trigger a DPIA for typical owners; (c) Art. 11 posture when
+erasure is architecturally impossible; (d) can we ship *any* jurisdiction list without becoming
+an advice-giver; **(e) is a 7-day server-side salt defensible as the consent-free ceiling** —
+i.e. does the §6 "no personal data at rest / banner-free" claim survive a 7-day linkable
+window, and is there a shorter number counsel would prefer (CNIL's audience-measurement
+exemption is the nearest precedent). **The 7-day cap is a founder judgement pending this
+answer; the 1-day default means a stricter ruling costs us nothing already shipped.**
 
-**Recommendation on record:** build as *consent-gated returning visitors*, True Reach-only,
-**off by default**; geo used solely to suppress unnecessary banners. This keeps "banner-free by
-default" literally true for every customer who does not opt in — the claim the product rests on.
+**Recommendation on record:** two tiers — a **banner-free baseline of 1–7 days (default 1) on
+every tier including free**, and a **consent-gated extended window** beyond 7 days; geo used
+solely to suppress unnecessary banners, never to unlock tracking. This keeps "banner-free by
+default" literally true for every customer who does not opt in — the claim the product rests
+on — while making returning visitors available to *all* users, not just premium ones.
 
 ## 7. Dashboard (MVP screens)
 
@@ -526,5 +568,10 @@ materializes.
   Founder idea for multi-day/returning-visitor insight. Load-bearing rule: **consent is the
   trigger, geo only decides whether to ask** — the geo-alone variant is rejected on record
   (VPN misclassification inverts protection; "non-EU = unrestricted" is false and decaying; it
-  would turn a structural guarantee into a configuration). True Reach-only, off by default.
-  Needs founder go/no-go **and counsel** before any code.
+  would turn a structural guarantee into a configuration). **Founder decision same day: TWO
+  TIERS** — a banner-free **baseline of 1–7 days (default 1)** available on **every tier
+  including free** (pure server-side salt arithmetic: no device storage ⇒ ePrivacy untouched at
+  any window, and GDPR sets no numeric rule), plus a **consent-gated extended window** beyond
+  7 days. Returning visitors therefore ship to *all* users, not just premium; True Reach still
+  gates geo + long windows. Needs founder go/no-go **and counsel (esp. the 7-day ceiling)**
+  before any code.
