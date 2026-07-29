@@ -406,10 +406,34 @@ and moves collection first-party:
 
 **Mechanics:** AgentsPoppy in-app checkout (first-party product, `kind=subscription`,
 owner's Stripe via the platform, flat 5% on processed sales; the standard purchase button
-ships the mandatory "Manage billing" control for free). Entitlement per deployment (all the
-owner's sites — simpler and more generous than per-site). Price target: **$5/month or
-$49/year** — visibly cheaper than Plausible/Fathom entry tiers while covering unlimited
-sites; the AWS costs (CloudFront/ACM ≈ cents) stay the owner's own. No external paywall or
+ships the mandatory "Manage billing" control for free). **Entitlement is PER DOMAIN** (founder decision
+2026-07-25, superseding the earlier per-deployment/unlimited shape): each True Reach domain is
+a paid unit, so the price scales with the value delivered and the founder keeps a single lever
+— raise the per-domain price — to monetise harder later without repackaging. This also keeps
+the house rule **"per domain, never per seat"** literally true. Indicative price **$14.99 per
+domain / month**, deliberately low to drive AgentsPoppy adoption; **the founder sets the real
+price in the platform, as for any owned poppy — it is not a code constant.** The AWS costs
+(CloudFront/ACM ≈ cents) stay the owner's own, and unlimited *traffic* stays free because we
+host nothing: competitors must meter pageviews, we structurally never have to.
+
+**What the paid unit buys, and what it does not:** a paid domain = True Reach (first-party,
+ad-blocker-immune collection + geo) for that domain. The **browser/team dashboard (§7b) is
+unlocked by holding ≥ 1 active domain subscription and then covers all the owner's sites** —
+priced per capability, never per viewer (unlimited viewers). The free tier keeps unlimited
+sites, unlimited retention, and the desktop dashboard.
+
+**⚠ Two dependencies this pricing creates — both must be respected:**
+1. **Platform has no quantity field.** `Pricing = {kind, amountMinor, currency, interval}` is a
+   flat price (verified in `agentspoppy-web/src/app/developer/page.tsx`), so "N × $14.99" is
+   not expressible today. Ship **tiered SKUs** instead (1 / 3 / 10 domains as separate flat
+   products — the founder can price each freely, which satisfies the flexibility goal). A true
+   per-unit quantity in the platform is the cleaner long-term fix, but TrafficPoppy must not
+   block on it.
+2. **Multi-domain True Reach becomes a prerequisite for any tier above 1** — the edge model is
+   a single-domain singleton today (`edgeStackName`, one `EdgeStatus.domain`), so domain #2
+   cannot be sold until it ships. **This does NOT block launch:** sell only the 1-domain tier
+   first (honest and complete), and let multi-domain unlock the 3/10 tiers as the natural
+   upsell. No external paywall or
 steering (marketplace rule); source stays open — the subscription gates entitlement, not
 secrecy (MailPoppy precedent).
 
