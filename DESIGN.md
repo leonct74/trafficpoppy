@@ -299,9 +299,12 @@ without AWS credentials**. Solution = the MailPoppy admin/member split, reapplie
   and offers "private analytics included" — each client sees only their own dashboard; no
   analytics vendor holds anyone's data. For agencies, True Reach's natural extension is
   per-SITE custom domains (`stats.client-a.com`) — same single subscription.
-- **Pricing position: team access is FREE** (per-seat walls contradict the "per domain,
-  never per seat" heritage and the openness pitch). Public share links (per-site
-  anyone-with-the-link toggle) are the unauthenticated sibling, also free.
+- **Pricing position (REVISED 2026-07-25, founder): team access is PAID** — it is the reason
+  the browser dashboard exists (a desktop-only view can't be shared with a team). Superseded
+  the original "team access is FREE" line. The heritage rule survives intact because we charge
+  **per capability, never per seat: unlimited viewers**. Unlocked by holding ≥ 1 active
+  per-domain subscription (§12), and then covering all the owner's sites. Public share links
+  (per-site anyone-with-the-link toggle) remain the free, unauthenticated sibling.
 - **Sequencing: first item after P5** — essential for org adoption, not for the solo-dev MVP.
 
 ## 8. Reuse from the existing poppies (do NOT reinvent)
@@ -588,6 +591,28 @@ materializes.
   (`edgeStackName` singleton, single `EdgeStatus.domain`) — giving other sites geo needs
   **multi-domain True Reach** (one cert+distribution per premium domain), a P5+ build to be
   designed alongside the §12 per-domain-vs-per-account pricing decision.
+- 2026-07-25 — **P6a STARTED — the viewer plane (§7b browser dashboard), backend complete.**
+  Shipped green (219 tests): Cognito user pool + client and a SEPARATE viewer Lambda in the
+  stack (a dashboard fault must never be able to drop a pageview; both handlers share ONE
+  content-addressed zip); dependency-free RS256 JWT verification (`lambdas/src/auth.ts`, 17
+  tests covering alg:none, HS256 confusion, wrong key/issuer/audience, expiry, tampering);
+  the read API with **server-side per-site authorization from verified claims only**, using
+  **404-not-403 so the API cannot enumerate which sites exist** (the agency requirement); a
+  vanilla-JS dashboard page incl. the NEW_PASSWORD_REQUIRED first-login flow. Implementation
+  decisions: (1) the range/live reduction moved to **`shared/src/range.ts`, imported by both
+  the sidecar and the viewer Lambda** — two implementations of "what the dashboard shows"
+  would drift silently and the two planes would disagree; the 62 existing backend tests pass
+  unchanged against it, which is the evidence the extraction was faithful. (2) The viewer's
+  execution role is **read-only on the table** (GetItem/Query only) — a total compromise
+  cannot alter a counter. (3) `USER_PASSWORD_AUTH`, not SRP: hand-rolled SRP is exactly the
+  crypto that goes subtly wrong, and the page carries no SDK. (4) The pool is **born tagged**
+  from new stack parameters rather than trusting stack-tag propagation — a pool ARN embeds a
+  random id, so its grant can ONLY be tag-scoped (the P5 ACM lesson, now load-bearing).
+  **⚠ Open before any deploy:** manifest is at **84 declared actions** (was 65) — vm-poppy DR5
+  had a vend rejected at 118% of the STS packed-policy budget, so this MUST be checked against
+  a real vend before P6a is called done; trim the cognito action list if it overflows.
+  **Still to build:** the desktop "Viewers" admin UI, entitlement gating (§12), and porting
+  the polished React reports to replace the minimal page.
 - 2026-07-25 — **§6b recorded: consent-gated retention windows (PROPOSED, not decided).**
   Founder idea for multi-day/returning-visitor insight. Load-bearing rule: **consent is the
   trigger, geo only decides whether to ask** — the geo-alone variant is rejected on record

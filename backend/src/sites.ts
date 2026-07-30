@@ -13,6 +13,7 @@ import {
   type DynamoDBClient,
 } from "@aws-sdk/client-dynamodb";
 import { randomBytes } from "node:crypto";
+import { reduceLive, reduceRange, type LiveStats, type RangeStats } from "../../shared/src/range";
 
 export interface Site {
   id: string;
@@ -144,63 +145,9 @@ export class SiteRegistry {
       Promise.all(days.map((d) => this.dayRows(siteId, d))),
       Promise.all(prevDays.map((d) => this.dayRows(siteId, d))),
     ]);
-
-    const series: { day: string; views: number; uniques: number }[] = [];
-    const sums = new Map<string, number>();
-    for (let i = 0; i < days.length; i++) {
-      const rows = perDay[i]!;
-      const one = (sk: string) => rows.find((r) => r.sk === sk)?.count ?? 0;
-      series.push({ day: days[i]!, views: one("total#views"), uniques: one("total#uniques") });
-      for (const r of rows) sums.set(r.sk, (sums.get(r.sk) ?? 0) + r.count);
-    }
-
-    const pick = (prefix: string, limit: number) =>
-      [...sums.entries()]
-        .filter(([sk]) => sk.startsWith(prefix))
-        .map(([sk, count]) => ({ key: sk.slice(prefix.length), count }))
-        .sort((a, b) => b.count - a.count || a.key.localeCompare(b.key))
-        .slice(0, limit);
-
-    return {
-      siteId,
-      from: days[0] ?? "",
-      to: days[days.length - 1] ?? "",
-      days: series,
-      views: sums.get("total#views") ?? 0,
-      uniques: sums.get("total#uniques") ?? 0,
-      topPages: pick("page#", 10),
-      topReferrers: pick("ref#", 10),
-      browsers: pick("browser#", 8),
-      os: pick("os#", 8),
-      sizes: pick("size#", 8),
-      // The marketing view: the allowlisted utm params (exactly these three — DESIGN.md §6).
-      utmSources: pick("utm_source#", 10),
-      utmCampaigns: pick("utm_campaign#", 10),
-      utmMediums: pick("utm_medium#", 10),
-      // Geography (True Reach tier) — empty until CloudFront fronts the collector.
-      countries: pick("country#", 12),
-      // Hour-of-day distribution (UTC) — 24 buckets, from the collector's hour# counters.
-      hours: Array.from({ length: 24 }, (_, h) => sums.get(`hour#${String(h).padStart(2, "0")}`) ?? 0),
-      prev: prevDays.length > 0 ? this.prevWindow(perPrevDay) : undefined,
-      receiving: sums.size > 0,
-    };
-  }
-
-  /** The previous window's totals + breakdowns — what Δ% chips and top movers compare against. */
-  private prevWindow(perDay: { sk: string; count: number }[][]): NonNullable<RangeStats["prev"]> {
-    const sums = new Map<string, number>();
-    for (const rows of perDay) for (const r of rows) sums.set(r.sk, (sums.get(r.sk) ?? 0) + r.count);
-    const pick = (prefix: string) =>
-      [...sums.entries()]
-        .filter(([sk]) => sk.startsWith(prefix))
-        .map(([sk, count]) => ({ key: sk.slice(prefix.length), count }))
-        .sort((a, b) => b.count - a.count || a.key.localeCompare(b.key));
-    return {
-      views: sums.get("total#views") ?? 0,
-      uniques: sums.get("total#uniques") ?? 0,
-      topPages: pick("page#"),
-      topReferrers: pick("ref#"),
-    };
+    // The reduction itself lives in shared/ so the viewer Lambda (browser dashboard, §7b)
+    // computes byte-identical numbers from the same rows. Two implementations would drift.
+    return reduceRange(siteId, days, perDay, perPrevDay);
   }
 
   /**
@@ -215,59 +162,15 @@ export class SiteRegistry {
         ExpressionAttributeValues: { ":p": { S: `site#${siteId}#recent` } },
       }),
     );
-    const byMinute = new Map<string, number>();
-    for (const it of out.Items ?? []) {
-      const sk = it.sk?.S ?? "";
-      if (sk.startsWith("t#")) byMinute.set(sk.slice(2), Number(it.count?.N ?? "0"));
-    }
-    const minutes: { minute: string; views: number }[] = [];
-    for (let i = 29; i >= 0; i--) {
-      const m = new Date(now.getTime() - i * 60_000).toISOString().slice(0, 16);
-      minutes.push({ minute: m, views: byMinute.get(m) ?? 0 });
-    }
-    return { siteId, minutes, views: minutes.reduce((a, b) => a + b.views, 0) };
+    const rows = (out.Items ?? []).map((it) => ({ sk: it.sk?.S ?? "", count: Number(it.count?.N ?? "0") }));
+    return reduceLive(siteId, rows, now);
   }
 }
 
-/** The live-ticker read: views per minute over the last half hour, oldest first. */
-export interface LiveStats {
-  siteId: string;
-  minutes: { minute: string; views: number }[];
-  views: number;
-}
-
-/** What the dashboard renders for a picked range. Mirrored in frontend/src/types.ts. */
-export interface RangeStats {
-  siteId: string;
-  from: string;
-  to: string;
-  /** Per-day series, oldest first — powers the daily bars strip. */
-  days: { day: string; views: number; uniques: number }[];
-  views: number;
-  /** Sum of DAILY uniques — cross-day identity cannot exist (the salt is destroyed daily). */
-  uniques: number;
-  topPages: { key: string; count: number }[];
-  topReferrers: { key: string; count: number }[];
-  browsers: { key: string; count: number }[];
-  os: { key: string; count: number }[];
-  sizes: { key: string; count: number }[];
-  /** The allowlisted utm params — the whole marketing-attribution surface (DESIGN.md §6). */
-  utmSources: { key: string; count: number }[];
-  utmCampaigns: { key: string; count: number }[];
-  utmMediums: { key: string; count: number }[];
-  /** Country-level geography (True Reach tier) — empty on the free Function-URL path. */
-  countries: { key: string; count: number }[];
-  /** Views per UTC hour-of-day, 24 buckets (index = hour). */
-  hours: number[];
-  /** The immediately-preceding window of the same length — for Δ% and top movers. */
-  prev?: { views: number; uniques: number; topPages: { key: string; count: number }[]; topReferrers: { key: string; count: number }[] };
-  receiving: boolean;
-}
-
-/** The last `n` UTC days ending today, oldest first (n=1 ⇒ just today). */
-export function lastDays(n: number, today: string): string[] {
-  const end = new Date(`${today}T00:00:00Z`).getTime();
-  const out: string[] = [];
-  for (let i = n - 1; i >= 0; i--) out.push(new Date(end - i * 86_400_000).toISOString().slice(0, 10));
-  return out;
-}
+/**
+ * The read-model types and the day-window helper now live in shared/ — imported by BOTH the
+ * sidecar (desktop poppy) and the viewer Lambda (browser dashboard, §7b). Re-exported here so
+ * every existing importer of ./sites keeps working unchanged.
+ */
+export type { LiveStats, RangeStats } from "../../shared/src/range";
+export { lastDays } from "../../shared/src/range";

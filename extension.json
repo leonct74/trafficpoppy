@@ -2,13 +2,17 @@
   "id": "com.trafficpoppy.desktop",
   "name": "TrafficPoppy",
   "version": "0.1.0",
-  "description": "Privacy-first web analytics that run entirely in your own AWS — a 1 KB script tag, no cookies, no banners, and nobody in the data path but you.",
+  "description": "Privacy-first web analytics that run entirely in your own AWS \u2014 a 1 KB script tag, no cookies, no banners, and nobody in the data path but you.",
   "icon": "frontend/trafficpoppy-icon.png",
   "permissionSet": {
     "id": "trafficpoppy-backend",
     "name": "TrafficPoppy backend",
-    "description": "Deploys and removes its own CloudFormation stack (named TrafficPoppyStack): a DynamoDB table, a collector Lambda behind a public URL, and a least-privilege execution role for that Lambda. Every change and delete is limited to resources named TrafficPoppy* (and a trafficpoppy-deploy-* code bucket) — it cannot touch anything else in your account. It creates one narrowly-scoped IAM role for its own Lambda; no account or organisation access.",
-    "requiredTags": ["agentspoppy:account", "agentspoppy:app", "agentspoppy:connection"],
+    "description": "Deploys and removes its own CloudFormation stack (named TrafficPoppyStack): a DynamoDB table, a collector Lambda behind a public URL, and a least-privilege execution role for that Lambda. Every change and delete is limited to resources named TrafficPoppy* (and a trafficpoppy-deploy-* code bucket) \u2014 it cannot touch anything else in your account. It creates one narrowly-scoped IAM role for its own Lambda; no account or organisation access.",
+    "requiredTags": [
+      "agentspoppy:account",
+      "agentspoppy:app",
+      "agentspoppy:connection"
+    ],
     "grants": [
       {
         "service": "cloudformation",
@@ -76,17 +80,33 @@
       },
       {
         "service": "logs",
-        "actions": ["CreateLogGroup", "DeleteLogGroup", "PutRetentionPolicy", "TagResource", "ListTagsForResource"],
+        "actions": [
+          "CreateLogGroup",
+          "DeleteLogGroup",
+          "PutRetentionPolicy",
+          "TagResource",
+          "ListTagsForResource"
+        ],
         "resourceScope": "arn:aws:logs:*:*:log-group:/aws/lambda/TrafficPoppy*"
       },
       {
         "service": "s3",
-        "actions": ["CreateBucket", "DeleteBucket", "ListBucket", "PutBucketTagging", "GetBucketLocation"],
+        "actions": [
+          "CreateBucket",
+          "DeleteBucket",
+          "ListBucket",
+          "PutBucketTagging",
+          "GetBucketLocation"
+        ],
         "resourceScope": "arn:aws:s3:::trafficpoppy-deploy-*"
       },
       {
         "service": "s3",
-        "actions": ["PutObject", "GetObject", "DeleteObject"],
+        "actions": [
+          "PutObject",
+          "GetObject",
+          "DeleteObject"
+        ],
         "resourceScope": "arn:aws:s3:::trafficpoppy-deploy-*/*"
       },
       {
@@ -112,6 +132,31 @@
           "ListTagsForResource"
         ],
         "resourceScope": "tagged-as-self"
+      },
+      {
+        "service": "cognito-idp",
+        "actions": [
+          "CreateUserPool",
+          "DeleteUserPool",
+          "UpdateUserPool",
+          "DescribeUserPool",
+          "CreateUserPoolClient",
+          "DeleteUserPoolClient",
+          "DescribeUserPoolClient",
+          "GetUserPoolMfaConfig",
+          "AdminCreateUser",
+          "AdminDeleteUser",
+          "AdminSetUserPassword",
+          "AdminAddUserToGroup",
+          "AdminRemoveUserFromGroup",
+          "AdminListGroupsForUser",
+          "CreateGroup",
+          "DeleteGroup",
+          "ListUsers",
+          "TagResource",
+          "ListTagsForResource"
+        ],
+        "resourceScope": "tagged-as-self"
       }
     ],
     "limits": null
@@ -126,5 +171,9 @@
   "teardown": {
     "endpoint": "/teardown"
   },
-  "capabilities": ["aws:credentials", "connection:read", "backend:invoke"]
+  "capabilities": [
+    "aws:credentials",
+    "connection:read",
+    "backend:invoke"
+  ]
 }

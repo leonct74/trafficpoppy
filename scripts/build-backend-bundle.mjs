@@ -84,12 +84,14 @@ async function main() {
   // 2. Bundle the collector Lambda into ONE CJS file, then a deterministic zip. The AWS SDK
   //    is provided by the nodejs20.x runtime, so we mark it external — keeps the zip tiny
   //    and avoids shipping a second copy of the SDK.
-  console.log("[2/3] esbuild + zip the collector Lambda");
-  const lambdaOut = join(staging2(), "collector.js");
-  mkdirSync(dirname(lambdaOut), { recursive: true });
-  await esbuild.build({
-    entryPoints: [join(root, "lambdas", "src", "collector.ts")],
-    outfile: lambdaOut,
+  // ONE zip, TWO handlers: collector.handler (the hot public beacon path) and viewer.handler
+  // (the browser dashboard, DESIGN.md §7b). Separate Lambdas in the template so a dashboard
+  // fault can never drop a pageview, but a single content-addressed artifact so there is only
+  // one key to upload, compare and reason about.
+  console.log("[2/3] esbuild + zip the collector and viewer Lambdas");
+  const stage = staging2();
+  mkdirSync(stage, { recursive: true });
+  const shared = {
     bundle: true,
     platform: "node",
     target: "node20",
@@ -98,15 +100,28 @@ async function main() {
     legalComments: "none",
     external: ["@aws-sdk/*"],
     logLevel: "warning",
-  });
-  const lambdaJs = readFileSync(lambdaOut);
-  rmSync(dirname(lambdaOut), { recursive: true, force: true });
-  // Content-addressed key so an unchanged collector reuses the same S3 object and
-  // CloudFormation sees NO_CHANGE — while any code change flips the key and forces an update.
-  const lambdaCodeKey = `collector-${createHash("sha256").update(lambdaJs).digest("hex").slice(0, 16)}.zip`;
+  };
+  const built = {};
+  for (const name of ["collector", "viewer"]) {
+    const outfile = join(stage, `${name}.js`);
+    await esbuild.build({ ...shared, entryPoints: [join(root, "lambdas", "src", `${name}.ts`)], outfile });
+    built[name] = readFileSync(outfile);
+  }
+  rmSync(stage, { recursive: true, force: true });
+  const lambdaJs = built.collector;
+  // Content-addressed over BOTH handlers — changing only the dashboard must still flip the
+  // key, or CloudFormation reports NO_CHANGE and silently keeps serving the old viewer.
+  const codeHash = createHash("sha256").update(built.collector).update(built.viewer).digest("hex").slice(0, 16);
+  const lambdaCodeKey = `collector-${codeHash}.zip`;
   // Fixed mtime (HEAD commit time) → byte-identical archive on any machine at the same commit.
   const epoch = Number(process.env.SOURCE_DATE_EPOCH || git(["log", "-1", "--format=%ct"]) || 0);
-  const lambdaZip = deterministicZip([{ name: "collector.js", data: lambdaJs }], epoch);
+  const lambdaZip = deterministicZip(
+    [
+      { name: "collector.js", data: built.collector },
+      { name: "viewer.js", data: built.viewer },
+    ],
+    epoch,
+  );
   const lambdaZipBase64 = lambdaZip.toString("base64");
 
   // 2b. A minimal probe function (diagnostics): same shape as a hand-made hello-world,

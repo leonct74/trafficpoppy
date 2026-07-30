@@ -217,6 +217,11 @@ export async function deploy(ctx: AwsCtx, attribution: AttributionContext): Prom
   const Parameters = [
     { ParameterKey: "LambdaCodeBucket", ParameterValue: bucket },
     { ParameterKey: "LambdaCodeKey", ParameterValue: lambdaCodeKey },
+    // The viewer pool is born tagged from these rather than relying on stack-tag propagation
+    // (which P5 proved is not universal — CFN's ACM handler dropped tags on create). A pool's
+    // ARN carries a random id, so its grant can only be tag-scoped: these are load-bearing.
+    { ParameterKey: "AttrAccountId", ParameterValue: attribution.accountId },
+    { ParameterKey: "AttrConnectionId", ParameterValue: attribution.connectionId },
   ];
   const args = {
     StackName: stackName,
