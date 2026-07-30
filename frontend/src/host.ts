@@ -57,4 +57,36 @@ export const host = {
     call("invokeBackend", [request], timeoutMs),
   openExternal: (url: string): Promise<void> => call("openExternal", [url]),
   notify: (n: { title: string; body?: string }): Promise<void> => call("notify", [n]),
+
+  /**
+   * Commerce (AGENTS.md / extension-sdk §4, capability `commerce:purchase`).
+   *
+   * `target` scopes a purchase to ONE thing — here, a site's domain — which is how §12's
+   * per-domain pricing works without any machinery of our own (MailPoppy's model).
+   *
+   * ⚠ `isPurchased` is the gate and the host verifies ownership SERVER-SIDE. Never cache the
+   * result as a durable "unlocked" flag or let a client-only boolean stand in for it.
+   */
+  purchaseInfo: (productId: string, options?: PurchaseTarget): Promise<PurchaseInfo> =>
+    call("purchaseInfo", options === undefined ? [productId] : [productId, options]),
+  isPurchased: (productId: string, options?: PurchaseTarget): Promise<boolean> =>
+    call("isPurchased", options === undefined ? [productId] : [productId, options]),
+  buyProduct: (productId: string, options?: PurchaseTarget): Promise<{ owned: boolean }> =>
+    call("buyProduct", options === undefined ? [productId] : [productId, options]),
+  /** Opens the buyer's Stripe portal. REQUIRED to be reachable wherever a paid feature lives. */
+  manageSubscription: (productId: string, options?: PurchaseTarget): Promise<void> =>
+    call("manageSubscription", options === undefined ? [productId] : [productId, options]),
 };
+
+export interface PurchaseTarget {
+  target?: string;
+}
+
+export interface PurchaseInfo {
+  name?: string;
+  price: { amountMinor: number; currency: string; kind: "subscription" | "one_time"; interval?: string } | null;
+  owned: boolean;
+}
+
+/** The product id priced in the developer dashboard (§12). One paid unit = one domain. */
+export const TRUE_REACH_PRODUCT = "true-reach";

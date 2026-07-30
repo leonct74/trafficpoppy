@@ -3,6 +3,8 @@ import { api } from "./api";
 import { Button } from "./Button";
 import { CopyButton } from "./CopyButton";
 import { TRUE_REACH } from "./catalogue";
+import { useEntitlement } from "./entitlement";
+import { Purchase } from "./Purchase";
 import type { EdgeStatus } from "./types";
 
 /**
@@ -20,6 +22,12 @@ export function TrueReach(props: { suggestedDomain?: string; onStatus?: (edge: E
   const [err, setErr] = useState<string | null>(null);
   const [confirmingRemove, setConfirmingRemove] = useState(false);
   const { onStatus } = props;
+
+  // §12: one paid unit = ONE DOMAIN, so entitlement is keyed to the domain in play — the one
+  // already set up, or the one about to be. (When multi-domain True Reach lands, this becomes
+  // per-site rather than per-edge; see DESIGN.md §14's open item.)
+  const billingTarget = edge?.domain || domain.trim() || props.suggestedDomain || "";
+  const entitlement = useEntitlement(billingTarget || undefined);
 
   useEffect(() => {
     let alive = true;
@@ -90,10 +98,27 @@ export function TrueReach(props: { suggestedDomain?: string; onStatus?: (edge: E
               autoCapitalize="off"
               spellCheck={false}
             />
-            <Button className="btn btn-primary" busyLabel="Starting…" onClick={deploy}>
+            <Button
+              className="btn btn-primary"
+              busyLabel="Starting…"
+              disabled={!entitlement.entitled}
+              onClick={deploy}
+            >
               Set up True Reach
             </Button>
           </div>
+          {billingTarget && !entitlement.entitled && (
+            <Purchase
+              entitlement={entitlement}
+              target={billingTarget}
+              pitch={
+                <>
+                  <strong>Ad blockers are hiding some of your visitors.</strong> Collecting on your own
+                  subdomain makes them countable again — and unlocks country statistics.
+                </>
+              }
+            />
+          )}
           <p className="muted" style={{ margin: 0, fontSize: 12 }}>
             {TRUE_REACH.caution}
           </p>
@@ -162,6 +187,18 @@ export function TrueReach(props: { suggestedDomain?: string; onStatus?: (edge: E
               <RecordLine label="Value" value={r.value} />
             </div>
           ))}
+
+          {edge.phase === "ready" && entitlement.entitled && (
+            <div className="spread">
+              <span className="badge ok">
+                <span className="dot" /> Subscribed · {billingTarget}
+              </span>
+              {/* REQUIRED by the platform: a visible way to cancel / see what was paid. */}
+              <button className="btn btn-sm" onClick={() => void entitlement.manage()}>
+                Manage billing
+              </button>
+            </div>
+          )}
 
           {edge.phase === "ready" && (
             <div className="spread">

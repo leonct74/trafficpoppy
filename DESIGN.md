@@ -645,6 +645,21 @@ materializes.
   (`edgeStackName` singleton, single `EdgeStatus.domain`) — giving other sites geo needs
   **multi-domain True Reach** (one cert+distribution per premium domain), a P5+ build to be
   designed alongside the §12 per-domain-vs-per-account pricing decision.
+- 2026-07-25 — **P6a: entitlement wired (§12).** True Reach setup is now gated on a
+  per-domain subscription: `host.isPurchased("true-reach", { target: <domain> })`, which maps
+  §12's per-domain pricing straight onto the platform's existing `target` mechanism (MailPoppy's
+  model) — no machinery of our own. Decisions: (1) the gate **fails CLOSED** — a commerce error,
+  offline host, or missing capability yields "not entitled", never an accidental unlock, and the
+  hook starts `undefined` so the UI shows neither state while checking. (2) The host verifies
+  ownership **server-side**; we re-ask after checkout rather than trusting the value `buyProduct`
+  resolves with. (3) Price is read live from `purchaseInfo` and never hard-coded, so the founder
+  sets it in the platform (§12) and the UI follows. (4) ⚠️ **We render our OWN purchase button**,
+  because this repo inlines the bridge rather than depending on `@agentspoppy/extension-sdk`
+  (host.ts) — so the SDK's free "Manage" link does not apply and the platform's REQUIRED
+  visible "Manage billing" control falls on us. It is rendered wherever the paid feature lives
+  and is covered by a test named after the rule; **omitting it is grounds for de-listing.**
+  Manifest gains the `commerce:purchase` capability; rating unchanged (medium, no beyond-own).
+  Open: the product id `true-reach` must exist in the developer dashboard before checkout works.
 - 2026-07-25 — **§7c recorded: premium rendering moves to an EXTERNAL CLIENT** (founder
   decision). Anything shipped inside the poppy is deployed into the customer's own AWS and can
   be read out of their Lambda, so premium charts live in a private, externally hosted client

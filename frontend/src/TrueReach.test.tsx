@@ -9,6 +9,21 @@ vi.mock("./api", () => ({
   api: { edgeStatus: vi.fn(), edgeDeploy: vi.fn(), edgeRemove: vi.fn() },
 }));
 
+// True Reach is a paid tier (§12), so the card now asks the host whether this domain is
+// subscribed. Default these tests to "subscribed" and assert the gate separately below.
+vi.mock("./host", async () => {
+  const actual = await vi.importActual<typeof import("./host")>("./host");
+  return {
+    ...actual,
+    host: {
+      isPurchased: vi.fn().mockResolvedValue(true),
+      purchaseInfo: vi.fn().mockResolvedValue({ price: null, owned: true }),
+      buyProduct: vi.fn(),
+      manageSubscription: vi.fn(),
+    },
+  };
+});
+
 const mocked = api as unknown as {
   edgeStatus: ReturnType<typeof vi.fn>;
   edgeDeploy: ReturnType<typeof vi.fn>;
@@ -21,8 +36,11 @@ const edge = (over: Partial<EdgeStatus>): EdgeStatus => ({
   ...over,
 });
 
-beforeEach(() => {
+beforeEach(async () => {
   vi.clearAllMocks();
+  const { host } = await import("./host");
+  (host.isPurchased as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(true);
+  (host.purchaseInfo as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({ price: null, owned: true });
 });
 
 describe("TrueReach card", () => {
@@ -78,5 +96,40 @@ describe("TrueReach card", () => {
     render(<TrueReach onStatus={(e) => seen.push(e)} />);
     await waitFor(() => expect(seen.length).toBeGreaterThan(0));
     expect(seen[0]!.domain).toBe("stats.ollydigital.com");
+  });
+});
+
+describe("the paid gate (§12 — per domain)", () => {
+  it("will not set up True Reach for a domain that isn't subscribed", async () => {
+    const { host } = await import("./host");
+    (host.isPurchased as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(false);
+    mocked.edgeStatus.mockResolvedValue({ edge: edge({ phase: "none" }) });
+
+    render(<TrueReach suggestedDomain="stats.ollydigital.com" />);
+
+    const btn = await screen.findByRole("button", { name: /set up true reach/i });
+    await waitFor(() => expect(btn).toBeDisabled());
+    expect(mocked.edgeDeploy).not.toHaveBeenCalled();
+  });
+
+  it("offers the unlock, priced per domain, when not subscribed", async () => {
+    const { host } = await import("./host");
+    (host.isPurchased as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(false);
+    (host.purchaseInfo as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
+      price: { amountMinor: 1499, currency: "USD", kind: "subscription", interval: "month" },
+      owned: false,
+    });
+    mocked.edgeStatus.mockResolvedValue({ edge: edge({ phase: "none" }) });
+
+    render(<TrueReach suggestedDomain="stats.ollydigital.com" />);
+    expect(await screen.findByRole("button", { name: /Unlock · \$14\.99\/month/ })).toBeInTheDocument();
+  });
+
+  it("PLATFORM RULE: a live subscription always shows a way to manage billing", async () => {
+    mocked.edgeStatus.mockResolvedValue({
+      edge: edge({ phase: "ready", domain: "stats.ollydigital.com", records: [] }),
+    });
+    render(<TrueReach />);
+    expect(await screen.findByRole("button", { name: /manage billing/i })).toBeInTheDocument();
   });
 });
