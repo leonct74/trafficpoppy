@@ -131,15 +131,21 @@ execution role**, so unlike VM-Poppy this poppy cannot be IAM-free. Same class a
 ## 6. Privacy & compliance posture (the product's spine)
 
 - **The site owner is the data controller.** TrafficPoppy is self-hosted software; Olly
-  Digital is not a processor (nothing reaches us). The in-app privacy note explains this
-  plainly (MailPoppy's AdminPrivacyNotice pattern: reassuring, not scary, "guidance not
-  legal advice").
+  Digital is not a processor. The in-app privacy note explains this plainly (MailPoppy's
+  AdminPrivacyNotice pattern: reassuring, not scary, "guidance not legal advice").
+  **Say it precisely (2026-07-25):** the claim is *"your visitors' data never reaches us"* —
+  NOT a blanket "nothing reaches us". Once the premium dashboard is served from our CDN
+  (§7c), a viewer's browser does fetch page assets from us, so access logs exist. The data
+  path stays owner's-AWS → owner's-browser and carries nothing to us; a technical buyer will
+  check this, so the wording must survive the check.
 - **Banner-free by design**: nothing stored/read on the visitor's device (ePrivacy clean);
   no personal data at rest (GDPR: anonymous aggregates are out of scope; the transient IP
   in-memory is ordinary server processing, same as any web server log — legitimate interest).
 - **What we never do**: cookies, localStorage, fingerprinting, full-URL referrers (query
   strings can carry emails/tokens — hostname only), raw IP storage, cross-day linking,
-  cross-site linking, data sale — and no "trust us": the mechanism is open source.
+  cross-site linking, data sale — and no "trust us": the mechanism is **source-available and
+  publicly auditable** (PolyForm Shield, per `LICENSE`). Do not write "open source": Shield is
+  not OSI open source, and technical buyers of a privacy product will call that out.
 - GPC/DNT honored (§3). UA reduced to coarse browser+OS families before storage.
 
 ## 6b. Consent-gated retention windows — *PROPOSED, NOT DECIDED* (founder idea 2026-07-25)
@@ -306,6 +312,54 @@ without AWS credentials**. Solution = the MailPoppy admin/member split, reapplie
   per-domain subscription (§12), and then covering all the owner's sites. Public share links
   (per-site anyone-with-the-link toggle) remain the free, unauthenticated sibling.
 - **Sequencing: first item after P5** — essential for org adoption, not for the solo-dev MVP.
+- **Where the premium reports actually live: see §7c.** The built-in dashboard the viewer
+  Lambda serves is the FREE tier; the polished reports ship in an externally hosted client so
+  they are not deployed into the customer's own account.
+
+## 7c. The external client — how a Verified poppy still monetises (founder decision 2026-07-25)
+
+**The problem this solves.** The premium value is beautiful reports. If they ship inside the
+poppy, they are (a) public in a Verified repo and (b) **deployed into the customer's own AWS**,
+so the code lands in their possession and can be read straight out of their Lambda. No
+obfuscation or entitlement check fixes that in a BYO-cloud product.
+
+**The split.** Premium rendering moves OUT of the customer's cloud into an **externally hosted
+client** (private repo) — the MailPoppy mobile-client precedent, and the platform's documented
+majority pattern (`docs/IN_APP_PURCHASES.md` §3a "cross-app entitlement", ✅ already built:
+`GET /api/entitlement?poppyId&productId&target` returns the unlock to an outside app).
+
+| Stays in the poppy — public, auditable, **Verified** | External client — private |
+|---|---|
+| collector, tracker, salt + privacy mechanism | premium charts and reports |
+| Cognito pool + **the read API** (it holds AWS access — exactly what must be auditable) | polished/mobile UX |
+| a plain built-in dashboard = **the free tier** | |
+
+**The rule that keeps the privacy pitch intact: the client talks to the customer's OWN API
+directly and never proxies through us.** We ship rendering; data flows owner's-AWS →
+owner's-device. (Hence the §6 wording fix — assets reach us, data does not.)
+
+**Branding is the monetisation lever, and the mechanism already exists.** Free tier is served
+from an agentspoppy subdomain, so every shared dashboard advertises the platform (the
+Calendly loop — and the audience seeing a TrafficPoppy dashboard is teammates and agency
+clients, i.e. exactly the profile that becomes AgentsPoppy users). Paid tier serves the same
+client from the customer's own domain — **True Reach already does custom domains**, so
+"remove our branding" needs no new machinery. It also sharpens the agency case: an agency
+showing dashboards to its clients will pay specifically to not carry someone else's brand.
+
+**⚠ Platform note (applies to AgentsPoppy, not this poppy).** TrafficPoppy is first-party, so
+an `*.agentspoppy.com` subdomain is safe here. Do **not** extend that to third-party
+developers: subdomains share the registrable domain, so any cookie scoped to
+`.agentspoppy.com` is readable by every subdomain, putting outside developers' JS inside the
+accounts/billing cookie boundary — and inviting `billing.agentspoppy.com`-style phishing.
+Third-party clients belong on a separate registrable domain (the `googleusercontent.com` /
+`githubusercontent.com` pattern), ideally on the Public Suffix List. The viral benefit comes
+from a visible "Powered by AgentsPoppy" badge, not from the DNS name, so nothing is lost.
+
+**Why this needs no change to the Verified policy.** Verified requires *auditability, not
+price*: public, build-bound source so anyone can audit what the poppy does with the access it
+is granted. A paid poppy satisfies it as long as the part touching AWS is readable — which is
+exactly the split above. `DEVELOPER_TERMS.md` already names PolyForm/FSL (restrictive-use
+licences) as acceptable, so the policy contemplates paid + public today.
 
 ## 8. Reuse from the existing poppies (do NOT reinvent)
 
@@ -591,6 +645,20 @@ materializes.
   (`edgeStackName` singleton, single `EdgeStatus.domain`) — giving other sites geo needs
   **multi-domain True Reach** (one cert+distribution per premium domain), a P5+ build to be
   designed alongside the §12 per-domain-vs-per-account pricing decision.
+- 2026-07-25 — **§7c recorded: premium rendering moves to an EXTERNAL CLIENT** (founder
+  decision). Anything shipped inside the poppy is deployed into the customer's own AWS and can
+  be read out of their Lambda, so premium charts live in a private, externally hosted client
+  instead; the poppy keeps the collector, the privacy mechanism, the Cognito pool, the read API
+  and a plain built-in dashboard as the free tier — all public, so **Verified is still earned**.
+  Uses the platform's already-built cross-app entitlement. Free tier served from an agentspoppy
+  subdomain (viral loop), paid served from the customer's own domain via **True Reach, which
+  already exists** — "remove our branding" needs no new machinery. Also recorded: the §6 wording
+  must be *"your visitors' data never reaches us"*, not a blanket "nothing reaches us" (CDN
+  assets do), and "open source" is replaced by "source-available" (PolyForm Shield is not OSI).
+  Platform note: never give third-party developers `*.agentspoppy.com` subdomains — shared
+  registrable domain puts their JS inside the accounts/billing cookie boundary.
+  **Consequence for P6a:** the built-in dashboard is now scoped as the FREE tier; the polished
+  React reports are no longer destined for the Lambda — they belong to the external client.
 - 2026-07-25 — **P6a STARTED — the viewer plane (§7b browser dashboard), backend complete.**
   Shipped green (219 tests): Cognito user pool + client and a SEPARATE viewer Lambda in the
   stack (a dashboard fault must never be able to drop a pageview; both handlers share ONE

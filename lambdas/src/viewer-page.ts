@@ -1,5 +1,11 @@
 // The browser dashboard's HTML, served by the viewer Lambda (DESIGN.md §7b).
 //
+// ⚠ THIS IS THE FREE TIER, AND IT SHOULD STAY PLAIN (DESIGN.md §7c). The polished premium
+// reports deliberately do NOT live here: anything served from this Lambda is deployed into
+// the customer's own AWS account, where its code can be read straight back out. Premium
+// rendering ships in the externally hosted client instead, consuming the same /api/* surface.
+// So: keep this page honest and functional, and resist porting the fancy charts into it.
+//
 // Dependency-free on purpose: this page is embedded in a Lambda that shares a zip with the
 // hot collector path, and a viewer's first paint should not wait on a framework download.
 // It talks to Cognito directly for login and to /api/* for data.
