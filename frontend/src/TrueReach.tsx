@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "./api";
 import { Button } from "./Button";
 import { CopyButton } from "./CopyButton";
+import { TRUE_REACH } from "./catalogue";
 import type { EdgeStatus } from "./types";
 
 /**
@@ -59,7 +60,7 @@ export function TrueReach(props: { suggestedDomain?: string; onStatus?: (edge: E
     <div className="card stack">
       <div className="spread">
         <h2 className="section-title" style={{ margin: 0 }}>
-          True Reach — your own domain
+          {TRUE_REACH.label}
         </h2>
         {edge.phase === "ready" && (
           <span className="badge ok">
@@ -78,10 +79,7 @@ export function TrueReach(props: { suggestedDomain?: string; onStatus?: (edge: E
 
       {edge.phase === "none" && (
         <>
-          <p style={{ margin: 0 }}>
-            Collect on a subdomain of <strong>your own site</strong> instead of the AWS address: ad blockers stop
-            hiding your visitors, and you get <strong>country statistics</strong> — both need your own domain.
-          </p>
+          <p style={{ margin: 0 }}>{TRUE_REACH.pitch}</p>
           <div className="row" style={{ flexWrap: "wrap" }}>
             <input
               className="input"
@@ -97,8 +95,7 @@ export function TrueReach(props: { suggestedDomain?: string; onStatus?: (edge: E
             </Button>
           </div>
           <p className="muted" style={{ margin: 0, fontSize: 12 }}>
-            You'll be asked to add two DNS records at your domain host. AWS-side cost: cents — CloudFront's
-            free tier covers typical sites.
+            {TRUE_REACH.caution}
           </p>
         </>
       )}

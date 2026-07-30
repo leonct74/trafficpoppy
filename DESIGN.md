@@ -599,3 +599,25 @@ materializes.
   7 days. Returning visitors therefore ship to *all* users, not just premium; True Reach still
   gates geo + long windows. Needs founder go/no-go **and counsel (esp. the 7-day ceiling)**
   before any code.
+- 2026-07-30 — **Helper prompt shipped (new platform requirement, AGENTS.md §9 + §10
+  checklist).** The primary creation surface must hand the user a prompt that IS the
+  onboarding: "Copy the helper prompt" → paste into any AI → add one sentence about what you
+  want → get back exactly what to type and tick. Banner variant on the **"Add a site"** card
+  (`Sites.tsx`), `btn btn-primary poppy-helper-pulse`, pulsing until first use, `Copied ✓`
+  feedback, copying via the resilient `copyText` fallback (the host webview may not delegate
+  `clipboard-write`, and a silent copy failure is a dead button). Compliance with the four
+  rules: (1) **generated, never hand-written** — new `catalogue.ts` is now the single source
+  for the add-site field labels/explanations, the `<script>` snippet builder, the snippet-step
+  wording and the True Reach pitch/caution/scope; `Sites.tsx` + `TrueReach.tsx` **render** it
+  and `helper-prompt.ts` **describes** it, so a field cannot drift from its description.
+  (2) The **privacy invariants (§3, §4, §6) are the constraints** — and here they double as
+  the pitch: the prompt tells the outside AI to explain back what will *never* be collected,
+  and to refuse per-person analytics (session recordings, cross-day funnels) rather than
+  invent it. Daily-only uniques and non-overridable GPC/DNT are stated so no AI promises a
+  monthly unique count. (3) Fixed 7-item answer shape mapping onto the form, ≤3 clarifying
+  questions first. (4) Ends mid-sentence on `WHAT I WANT TO MEASURE: `. True Reach appears
+  with its **honest per-registrable-domain scope** (the 2026-07-25 fix above), and the
+  snippet carries this install's real collector origin — first-party once True Reach is live.
+  Also re-vendored the design kit's `.poppy-helper-pulse` into `frontend/src/poppy.css`.
+  Frontend-only, no AWS surface touched; 9 new tests (`helper-prompt.test.ts`), suite green
+  (187 across the four workspaces).

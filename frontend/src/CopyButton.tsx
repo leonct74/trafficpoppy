@@ -1,6 +1,9 @@
 import { useState } from "react";
 
-async function copyText(text: string): Promise<boolean> {
+/** Copy, with the legacy fallback that matters here: the host renders us in a webview that
+ *  may not delegate `clipboard-write`, and a copy button that silently fails is a dead
+ *  button (AGENTS.md §9). Exported so every copy affordance shares the one resilient path. */
+export async function copyText(text: string): Promise<boolean> {
   try {
     if (navigator.clipboard?.writeText) {
       await navigator.clipboard.writeText(text);

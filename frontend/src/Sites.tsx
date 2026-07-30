@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "./api";
 import { Button } from "./Button";
-import { CopyButton } from "./CopyButton";
+import { CopyButton, copyText } from "./CopyButton";
+import { SITE_FIELDS, SNIPPET_STEP, TRUE_REACH, buildSnippet } from "./catalogue";
+import { buildHelperPrompt } from "./helper-prompt";
 import type { Site, SiteStats } from "./types";
 
 /**
@@ -93,28 +95,70 @@ export function Sites(props: { collectorUrl: string; trueReachDomain?: string; o
         <div className="section-title" style={{ margin: 0 }}>
           Add a site
         </div>
+
+        <HelperPromptBanner collectorUrl={props.collectorUrl} trueReachDomain={props.trueReachDomain} />
+
+        {/* Labels and placeholders come from SITE_FIELDS so the helper prompt describes
+            exactly these fields, in exactly these words (AGENTS.md §9, rule 1). */}
         <div className="grid-2">
-          <label className="field">
-            <span>Name</span>
-            <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="Olly Digital" />
-          </label>
-          <label className="field">
-            <span>Website address</span>
-            <input
-              className="input"
-              value={domain}
-              onChange={(e) => setDomain(e.target.value)}
-              placeholder="ollydigital.com"
-              autoCapitalize="off"
-              spellCheck={false}
-            />
-          </label>
+          {SITE_FIELDS.map((f) => (
+            <label className="field" key={f.key}>
+              <span>{f.label}</span>
+              <input
+                className="input"
+                value={f.key === "name" ? name : domain}
+                onChange={(e) => (f.key === "name" ? setName : setDomain)(e.target.value)}
+                placeholder={f.placeholder}
+                autoCapitalize={f.key === "domain" ? "off" : undefined}
+                spellCheck={f.key === "domain" ? false : undefined}
+              />
+            </label>
+          ))}
         </div>
         <div>
           <Button className="btn btn-primary" busyLabel="Adding…" disabled={!name.trim()} onClick={add}>
             Add site
           </Button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * "Copy the helper prompt" — the banner variant (AGENTS.md §9, REQUIRED on the primary
+ * creation surface). The prompt is TrafficPoppy's onboarding, packaged: paste it into any AI,
+ * say what you want to measure, get back what to type here and where to paste the snippet.
+ * Pulses until it's first used — an invitation, not an alarm; the kit's class holds still for
+ * anyone who asked their OS for reduced motion.
+ */
+function HelperPromptBanner(props: { collectorUrl: string; trueReachDomain?: string }) {
+  const [copied, setCopied] = useState(false);
+  const [used, setUsed] = useState(false);
+  const [failed, setFailed] = useState(false);
+
+  const copy = async () => {
+    const ok = await copyText(buildHelperPrompt(props));
+    setUsed(true);
+    setFailed(!ok);
+    setCopied(ok);
+    window.setTimeout(() => {
+      setCopied(false);
+      setFailed(false);
+    }, 2500);
+  };
+
+  return (
+    <div className="banner info">
+      <div className="spread">
+        <span>
+          <strong>Not sure what to put here?</strong> Copy the helper prompt, paste it into any AI you use (Claude,
+          ChatGPT…), and say what you want to know about your visitors — it answers with everything to fill in
+          below, where to paste the snippet, and what TrafficPoppy will never collect.
+        </span>
+        <Button className={`btn btn-primary${used ? "" : " poppy-helper-pulse"}`} onClick={copy}>
+          {copied ? "Copied ✓" : failed ? "Select & copy manually" : "✨ Copy the helper prompt"}
+        </Button>
       </div>
     </div>
   );
@@ -132,8 +176,7 @@ function SiteRow(props: {
   const firstParty = !!trueReachDomain && isFirstPartyFor(site.domain, trueReachDomain);
   // A True Reach edge exists, but for a different domain than this site → upsell hint.
   const canUpsell = !!trueReachDomain && !firstParty;
-  const origin = (firstParty ? `https://${trueReachDomain}` : collectorUrl).replace(/\/+$/, "");
-  const snippet = `<script defer src="${origin}/t.js" data-site="${site.id}"></script>`;
+  const snippet = buildSnippet(firstParty ? `https://${trueReachDomain}` : collectorUrl, site.id);
   const [stats, setStats] = useState<SiteStats | null>(null);
   const [confirming, setConfirming] = useState(false);
 
@@ -181,7 +224,7 @@ function SiteRow(props: {
 
       <div>
         <div className="section-title" style={{ marginBottom: 6 }}>
-          Paste this into your site's &lt;head&gt;
+          {SNIPPET_STEP.title}
         </div>
         <div className="row" style={{ alignItems: "stretch" }}>
           <code className="chip" style={{ flex: 1, overflowX: "auto", whiteSpace: "nowrap", padding: "8px 10px" }}>
@@ -196,7 +239,7 @@ function SiteRow(props: {
           </p>
         ) : canUpsell ? (
           <p className="muted" style={{ margin: "6px 0 0", fontSize: 12 }}>
-            Free tier — served from your AWS address. Set up True Reach on a subdomain of{" "}
+            {TRUE_REACH.freeTierNote} Set up True Reach on a subdomain of{" "}
             <span className="mono">{site.domain || "this site"}</span> for ad-blocker-immune collection and country
             stats.
           </p>
