@@ -7,6 +7,7 @@ import { host, type AccessState } from "./host";
 import { RemovePanel } from "./RemovePanel";
 import { Sites } from "./Sites";
 import { TrueReach } from "./TrueReach";
+import { Viewers } from "./Viewers";
 import type { DeploymentStatus, EdgeStatus, Meta, Site } from "./types";
 
 // Served from frontend/public → dist root; the same file the manifest declares as our icon.
@@ -231,6 +232,7 @@ export function App() {
               onOpen={setOpenSite}
             />
           )}
+          <Viewers viewerUrl={status?.viewerUrl} canManage={!!status?.viewerUserPoolId} />
           <TrueReach onStatus={setEdgeState} />
         </>
       )}

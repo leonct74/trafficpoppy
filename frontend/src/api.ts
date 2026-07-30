@@ -3,7 +3,7 @@
 // goes through the bridge.
 
 import { host } from "./host";
-import type { DeploymentStatus, EdgeStatus, LiveStats, Meta, RangeStats, Site, SiteStats } from "./types";
+import type { DeploymentStatus, EdgeStatus, LiveStats, Meta, RangeStats, Site, SiteStats, Viewer } from "./types";
 
 export const api = {
   meta: (): Promise<Meta> => host.invokeBackend({ method: "GET", path: "/meta" }),
@@ -37,6 +37,15 @@ export const api = {
   /** The last-30-minutes ticker. */
   liveStats: (id: string): Promise<{ live: LiveStats }> =>
     host.invokeBackend({ method: "GET", path: `/sites/${encodeURIComponent(id)}/live` }),
+
+  /** Viewer accounts (§7b): who on the team can open the browser dashboard. */
+  listViewers: (): Promise<{ viewers: Viewer[] }> => host.invokeBackend({ method: "GET", path: "/viewers" }),
+  inviteViewer: (email: string, grants: { allSites: boolean; siteIds: string[] }): Promise<{ viewer: Viewer }> =>
+    host.invokeBackend({ method: "POST", path: "/viewers", body: { email, ...grants } }),
+  setViewerGrants: (email: string, grants: { allSites: boolean; siteIds: string[] }): Promise<{ ok: true }> =>
+    host.invokeBackend({ method: "PUT", path: `/viewers/${encodeURIComponent(email)}`, body: grants }),
+  removeViewer: (email: string): Promise<{ ok: true }> =>
+    host.invokeBackend({ method: "DELETE", path: `/viewers/${encodeURIComponent(email)}` }),
 
   /** True Reach (custom domain): live state, deploy, remove. */
   edgeStatus: (): Promise<{ edge: EdgeStatus }> => host.invokeBackend({ method: "GET", path: "/truereach" }),

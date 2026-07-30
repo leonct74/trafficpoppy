@@ -69,6 +69,10 @@ export interface DeploymentStatus {
   updateAvailable: boolean;
   /** The collector endpoint (Function URL) once the stack is up — the tracking script's origin. */
   collectorUrl?: string;
+  /** The team dashboard URL (§7b). Absent on stacks deployed before P6a. */
+  viewerUrl?: string;
+  /** The Cognito pool holding viewer accounts — what the Viewers panel manages. */
+  viewerUserPoolId?: string;
 }
 
 export type StackOperation = "CREATE" | "UPDATE" | "NO_CHANGE" | "RECREATE";
@@ -124,7 +128,12 @@ export async function getStatus(ctx: AwsCtx): Promise<DeploymentStatus> {
   // it while the template key stays put, so updateAvailable must watch both. (Live lesson:
   // the CORS-fix release was code-only and the UI couldn't see the pending update.)
   const deployedCodeKey = stack?.Parameters?.find((p) => p.ParameterKey === "LambdaCodeKey")?.ParameterValue;
-  const collectorUrl = stack?.Outputs?.find((o) => o.OutputKey === "CollectorUrl")?.OutputValue;
+  const output = (key: string) => stack?.Outputs?.find((o) => o.OutputKey === key)?.OutputValue;
+  const collectorUrl = output("CollectorUrl");
+  // The viewer plane (§7b). Absent on a stack deployed before P6a — the UI must treat that as
+  // "not available yet" and offer the update, never as an error.
+  const viewerUrl = output("ViewerUrl");
+  const viewerUserPoolId = output("ViewerUserPoolId");
 
   // On a failure, pull the actual reason from the stack's events so the details view shows
   // WHY (e.g. an AccessDenied on a specific action), not just "it rolled back". Best-effort
@@ -140,6 +149,8 @@ export async function getStatus(ctx: AwsCtx): Promise<DeploymentStatus> {
     inProgress: !!stackStatus && IN_PROGRESS.test(stackStatus),
     message: phase === "failed" ? failureMessage(stackStatus) : undefined,
     failureReason,
+    viewerUrl,
+    viewerUserPoolId,
     deployedTemplateKey,
     currentTemplateKey: templateKey,
     // Only meaningful once we know what's deployed; a stack from before this tag existed

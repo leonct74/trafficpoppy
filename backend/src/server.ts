@@ -23,6 +23,8 @@ import { ACMClient } from "@aws-sdk/client-acm";
 import { edgeRegion, probeZipBase64 } from "./generated/backend-bundle";
 import { readBootstrap, brokerCredentialsProvider } from "./boot";
 import { deploy, getStatus, teardown, tableName, type AwsCtx } from "./stack";
+import { ViewerDirectory } from "./viewers";
+import { CognitoIdentityProviderClient } from "@aws-sdk/client-cognito-identity-provider";
 import { deployEdge, edgeStatus, removeEdge, type CertStore, type EdgeCtx } from "./edge";
 import { DeleteItemCommand, GetItemCommand, PutItemCommand } from "@aws-sdk/client-dynamodb";
 import { SiteRegistry, lastDays } from "./sites";
@@ -81,6 +83,9 @@ const edge: EdgeCtx = {
   certs: certStore,
   attribution: { accountId: boot.account.accountId, connectionId: boot.connectionId },
 };
+// Viewer accounts live in the core region's pool (the stack that owns the data).
+const cognito = new CognitoIdentityProviderClient({ region, credentials });
+
 /** The current UTC day (YYYY-MM-DD) — the key the dashboard reads. */
 const today = () => new Date().toISOString().slice(0, 10);
 /** Attribution for the stack (who created it) — separate from the AWS client context. */
@@ -342,6 +347,38 @@ const server = createServer(async (req, res) => {
         return json(res, 200, await deployEdge(edge, body?.domain ?? "", await collectorHost()));
       }
       if (method === "DELETE") return json(res, 200, await removeEdge(edge));
+    }
+
+    // Viewer accounts (P6a, §7b) — the team who can open the browser dashboard. The pool id
+    // comes from the live stack, so a deployment from before P6a reports "not available yet"
+    // and the UI offers the update instead of failing.
+    if (parts[0] === "viewers") {
+      const poolId = (await getStatus(aws)).viewerUserPoolId;
+      if (!poolId) {
+        return json(res, 409, {
+          error: "Update your deployment to turn on team access — it adds the sign-in your team uses.",
+        });
+      }
+      const dir = new ViewerDirectory(cognito, poolId);
+
+      if (method === "GET" && parts.length === 1) return json(res, 200, { viewers: await dir.list() });
+      if (method === "POST" && parts.length === 1) {
+        const body = (await readBody(req)) as { email?: string; allSites?: boolean; siteIds?: string[] } | undefined;
+        const grants = { allSites: !!body?.allSites, siteIds: body?.siteIds ?? [] };
+        return json(res, 200, { viewer: await dir.invite(body?.email ?? "", grants) });
+      }
+      if (parts.length === 2) {
+        const email = decodeURIComponent(parts[1]!);
+        if (method === "PUT") {
+          const body = (await readBody(req)) as { allSites?: boolean; siteIds?: string[] } | undefined;
+          await dir.setGrants(email, { allSites: !!body?.allSites, siteIds: body?.siteIds ?? [] });
+          return json(res, 200, { ok: true });
+        }
+        if (method === "DELETE") {
+          await dir.remove(email);
+          return json(res, 200, { ok: true });
+        }
+      }
     }
 
     // The teardown hook the host POSTs at the start of teardown. MUST be idempotent.

@@ -21,6 +21,10 @@ export interface DeploymentStatus {
   updateAvailable: boolean;
   /** The collector endpoint once the stack is up — the tracking script's origin. */
   collectorUrl?: string;
+  /** The team dashboard URL (§7b). Absent on a deployment from before P6a. */
+  viewerUrl?: string;
+  /** The Cognito pool holding viewer accounts. Absent ⇒ team access needs a stack update. */
+  viewerUserPoolId?: string;
 }
 
 export interface Meta {
@@ -103,4 +107,14 @@ export interface SiteStats {
   topReferrers: { key: string; count: number }[];
   browsers: { key: string; count: number }[];
   receiving: boolean;
+}
+
+/** A team member who can open the browser dashboard (DESIGN.md §7b). */
+export interface Viewer {
+  email: string;
+  /** Cognito account state — FORCE_CHANGE_PASSWORD until they accept the invite. */
+  status: string;
+  allSites: boolean;
+  siteIds: string[];
+  createdAt?: string;
 }
