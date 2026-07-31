@@ -691,9 +691,17 @@ materializes.
   crypto that goes subtly wrong, and the page carries no SDK. (4) The pool is **born tagged**
   from new stack parameters rather than trusting stack-tag propagation — a pool ARN embeds a
   random id, so its grant can ONLY be tag-scoped (the P5 ACM lesson, now load-bearing).
-  **⚠ Open before any deploy:** manifest is at **84 declared actions** (was 65) — vm-poppy DR5
-  had a vend rejected at 118% of the STS packed-policy budget, so this MUST be checked against
-  a real vend before P6a is called done; trim the cognito action list if it overflows.
+  **Permission budget — MEASURED, risk downgraded.** The manifest went 65 → **84 declared
+  actions**, which raised the vm-poppy DR5 spectre (a vend rejected at 118% of the STS
+  packed-policy budget). Measured by running the broker's own `sessionPolicyForConnection`
+  over this manifest and deflating the result: the **live, known-good P5 config packs to
+  ~1000 chars; P6a packs to ~1188 — a +18.8% increase over a configuration that demonstrably
+  works in production today** (13 statements, 3927 chars plaintext). So the action *count* was
+  the wrong thing to fear — what costs budget is statement and ARN length, and tagged-as-self
+  grants share one condition block. Caveat: AWS's exact packing is not documented, so this is
+  a ratio against a known-good baseline, not a proof; the real `PackedPolicySize` still gets
+  checked on the first live vend, and the cognito action list is the thing to trim if it
+  overflows. Repeatable: `scripts` in the scratchpad bundle `policy.ts` and diff the two.
   **Still to build:** the desktop "Viewers" admin UI, entitlement gating (§12), and porting
   the polished React reports to replace the minimal page.
 - 2026-07-25 — **§6b recorded: consent-gated retention windows (PROPOSED, not decided).**
