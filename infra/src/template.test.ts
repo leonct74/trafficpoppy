@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { PASSWORD_POLICY } from "../../shared/src/password-policy";
 import { buildTemplate, FUNCTION_NAME, STACK_NAME, TABLE_NAME, TTL_ATTRIBUTE } from "./template";
 
 const template = buildTemplate();
@@ -34,6 +35,16 @@ describe("the analytics table", () => {
     // The build script content-addresses the template; a nondeterministic builder would
     // make the hash differ per machine.
     expect(JSON.stringify(buildTemplate())).toBe(JSON.stringify(buildTemplate()));
+  });
+});
+
+describe("the viewer pool's password policy", () => {
+  it("enforces exactly what the login page tells the user (shared/password-policy.ts)", () => {
+    // Founder feedback 2026-08-04: a rejection without the rule is a dead end. Both the
+    // pool and the page read the same module; this guards against either side reverting
+    // to its own literal numbers.
+    const pool = template.Resources.ViewerUserPool as { Properties: { Policies: unknown } };
+    expect(pool.Properties.Policies).toEqual({ PasswordPolicy: { ...PASSWORD_POLICY } });
   });
 });
 

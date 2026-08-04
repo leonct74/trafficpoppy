@@ -772,3 +772,13 @@ materializes.
   router only matches `GET`) — harmless for browsers, not worth a statement. Next: invite
   the first viewer through Team access and complete the temp-password → dashboard flow
   end-to-end on a phone.
+- 2026-08-04 — **Viewer flow verified end-to-end by the founder** (invite email → temp
+  password → new password → dashboard; wrong email correctly rejected). Two founder UX
+  fixes from that run: (1) ready screen is now **tabbed** (Your sites / Team access /
+  True Reach) — with several sites both cards sat below the fold; inactive panels stay
+  mounted so True Reach polling keeps feeding snippet origins. (2) The login page now
+  **states the password rules** ("At least 12 characters, including an upper-case letter,
+  a lower-case letter and a number") under the new-password field and replaces Cognito's
+  raw `InvalidPasswordException` with that sentence — policy lives ONCE in
+  `shared/password-policy.ts`, imported by both the template and the page, with tests
+  pinning both sides so told-vs-enforced can never drift.

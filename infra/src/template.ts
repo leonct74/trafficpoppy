@@ -11,6 +11,8 @@
 // removes the whole footprint, so teardown can't leak. Nothing gets DeletionPolicy:
 // Retain, and deletion protection stays off — both would make our own teardown fail.
 
+import { PASSWORD_POLICY } from "../../shared/src/password-policy";
+
 /** The one stack we deploy. The manifest's cloudformation grant is scoped to this exact name. */
 export const STACK_NAME = "TrafficPoppyStack";
 
@@ -239,15 +241,9 @@ export function buildTemplate(): CfnTemplate {
           // EMAIL_ONLY recovery (MailPoppy precedent): no SMS, so no SNS role, no spend, and
           // no phone number collected.
           AccountRecoverySetting: { RecoveryMechanisms: [{ Name: "verified_email", Priority: 1 }] },
-          Policies: {
-            PasswordPolicy: {
-              MinimumLength: 12,
-              RequireLowercase: true,
-              RequireUppercase: true,
-              RequireNumbers: true,
-              RequireSymbols: false,
-            },
-          },
+          // Shared with the login page (shared/password-policy.ts) so the rule the user
+          // is TOLD is always the rule Cognito ENFORCES.
+          Policies: { PasswordPolicy: { ...PASSWORD_POLICY } },
           // Born tagged — see the Parameters note. Values match stackTags() exactly so the
           // explicit tags and CloudFormation's propagated stack tags can never disagree.
           UserPoolTags: {

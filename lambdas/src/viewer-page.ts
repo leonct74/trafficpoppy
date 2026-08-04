@@ -13,6 +13,8 @@
 // It renders NO data before authentication — the markup below contains only a login form;
 // every number arrives from an authenticated fetch afterwards.
 
+import { passwordRules } from "../../shared/src/password-policy";
+
 export interface PageConfig {
   region: string;
   userPoolClientId: string;
@@ -65,7 +67,7 @@ button.ghost{background:transparent;color:var(--fg);border:1px solid var(--line)
     <form id="loginForm">
       <label class="mut">Email<input id="email" type="email" autocomplete="username" required></label>
       <label class="mut" style="display:block;margin-top:12px">Password<input id="password" type="password" autocomplete="current-password" required></label>
-      <div id="newPwWrap" class="hide"><label class="mut" style="display:block;margin-top:12px">Choose a new password<input id="newPassword" type="password" autocomplete="new-password"></label></div>
+      <div id="newPwWrap" class="hide"><label class="mut" style="display:block;margin-top:12px">Choose a new password<input id="newPassword" type="password" autocomplete="new-password"></label><div class="mut" style="margin-top:6px">${passwordRules()}</div></div>
       <button id="loginBtn" style="width:100%;margin-top:16px" type="submit">Sign in</button>
     </form>
   </div>
@@ -94,9 +96,19 @@ function show(el,on){el.classList[on?"remove":"add"]("hide")}
 function esc(s){var d=document.createElement("div");d.textContent=s==null?"":String(s);return d.innerHTML}
 function nfmt(n){return (n||0).toLocaleString()}
 
+var RULES=${js(passwordRules())};
 function cognito(target,body){
   return fetch(COG,{method:"POST",headers:{"content-type":"application/x-amz-json-1.1","x-amz-target":"AWSCognitoIdentityProviderService."+target},body:JSON.stringify(body)})
-    .then(function(r){return r.json().then(function(j){if(!r.ok)throw new Error(j.message||"Sign-in failed");return j})});
+    .then(function(r){return r.json().then(function(j){
+      if(!r.ok){
+        // Cognito's raw policy error ("Password did not conform with policy: …") never
+        // states the actual rule — replace it with the one sentence that does.
+        var t=j.__type||"";
+        if(t.indexOf("InvalidPasswordException")>=0)throw new Error("That password doesn't meet the requirements. "+RULES);
+        throw new Error(j.message||"Sign-in failed");
+      }
+      return j;
+    })});
 }
 
 function saveTokens(res){
