@@ -49,7 +49,8 @@ THE OPTIONAL UPGRADE — "${TRUE_REACH.label}":
 - ${trueReachState}
 - ${TRUE_REACH.caution}
 - ${TRUE_REACH.scope}
-- Recommend it only if what I described actually needs it: ad blockers hiding a meaningful share of my visitors, or wanting country statistics. Otherwise say the free tier is enough — the free tier is not crippled.
+- The free tier collects everything and shows it in the TrafficPoppy desktop app. The upgrade adds the ONLINE part: a statistics page on my own address (stats.my-site.com) that I and people I invite can open from any browser or phone — with charts including a traffic-flow view (where visits come in, which pages they move through, where they leave), plus ad-blocker-immune counting and visitor countries.
+- Recommend it if what I described involves any of these, in this order of weight: (1) checking stats away from one desktop computer, or sharing them with a team, a client, or an agency; (2) ad blockers likely hiding a meaningful share of my audience; (3) wanting country statistics. Otherwise say the free tier is enough — full collection, just desktop-only viewing.
 
 WHAT A VISIT RECORDS (this is the whole list — there is nothing more detailed anywhere):
 ${collectedLines}

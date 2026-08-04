@@ -31,6 +31,26 @@ describe("the helper prompt", () => {
     expect(p).toContain(TRUE_REACH.scope);
   });
 
+  it("advises the upgrade with the founder's benefit order: share/browser first, ad-block second, countries third", () => {
+    const p = buildHelperPrompt({ collectorUrl: URL });
+    const share = p.indexOf("sharing them with a team");
+    const adblock = p.indexOf("ad blockers likely hiding");
+    const countries = p.indexOf("wanting country statistics");
+    expect(share).toBeGreaterThan(-1);
+    expect(share).toBeLessThan(adblock);
+    expect(adblock).toBeLessThan(countries);
+    // And it is honest that the free tier is desktop-only viewing, not crippled collection.
+    expect(p).toContain("full collection, just desktop-only viewing");
+  });
+
+  it("knows returning visitors exist within the owner's 1–7 day window (§6b)", () => {
+    const p = buildHelperPrompt({ collectorUrl: URL });
+    expect(p).toContain("new-vs-returning visitors");
+    expect(p).toContain("1–7 days");
+    // The monthly-uniques impossibility stays stated — the window doesn't soften it.
+    expect(p).toContain("monthly unique counts are not computable");
+  });
+
   it("pitches True Reach with the card's own words when it isn't set up", () => {
     const p = buildHelperPrompt({ collectorUrl: URL });
     expect(p).toContain(TRUE_REACH.pitch);
