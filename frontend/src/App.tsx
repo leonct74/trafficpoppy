@@ -296,6 +296,7 @@ export function App() {
                 return edgeState.some((e) => e.phase === "ready") ? status?.viewerUrl : undefined;
               })()}
               canManage={!!status?.viewerUserPoolId}
+              onlineActive={edgeState.some((e) => e.phase === "ready")}
             />
           </div>
           <div hidden={section !== "reach"}>

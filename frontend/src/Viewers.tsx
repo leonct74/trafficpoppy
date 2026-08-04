@@ -14,7 +14,17 @@ import type { Site, Viewer } from "./types";
  * Grants are per-site so an agency can give each client exactly their own dashboard — the
  * viewer API enforces this server-side from the verified token, and hides everything else.
  */
-export function Viewers(props: { viewerUrl?: string; canManage: boolean }) {
+export function Viewers(props: {
+  viewerUrl?: string;
+  canManage: boolean;
+  /**
+   * The Online Dashboard paywall (founder, 2026-08-04): inviting is pointless — and
+   * misleading — while no domain has the tier, so the invite flow only exists once one
+   * does. Existing viewers stay manageable either way: a lapsed subscription must never
+   * lock the owner out of REMOVING people.
+   */
+  onlineActive?: boolean;
+}) {
   const [sites, setSites] = useState<Site[]>([]);
   const [viewers, setViewers] = useState<Viewer[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -116,9 +126,11 @@ export function Viewers(props: { viewerUrl?: string; canManage: boolean }) {
           <span className="spinner" /> <span className="muted">Loading your team…</span>
         </div>
       ) : viewers.length === 0 ? (
-        <p className="muted" style={{ margin: 0 }}>
-          Nobody has been invited yet.
-        </p>
+        props.onlineActive ? (
+          <p className="muted" style={{ margin: 0 }}>
+            Nobody has been invited yet.
+          </p>
+        ) : null
       ) : (
         <div className="stack">
           {viewers.map((v) => (
@@ -127,39 +139,43 @@ export function Viewers(props: { viewerUrl?: string; canManage: boolean }) {
         </div>
       )}
 
-      <div className="card card-2 stack" style={{ marginBottom: 0 }}>
-        <div className="section-title" style={{ margin: 0 }}>
-          Invite someone
-        </div>
-        <label className="field">
-          <span>Their email</span>
-          <input
-            className="input"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="colleague@example.com"
-            autoCapitalize="off"
-            spellCheck={false}
+      {/* Inviting exists only once the tier does — behind the paywall, an invite would
+          activate accounts that can open nothing. Managing/removing above always works. */}
+      {props.onlineActive && (
+        <div className="card card-2 stack" style={{ marginBottom: 0 }}>
+          <div className="section-title" style={{ margin: 0 }}>
+            Invite someone
+          </div>
+          <label className="field">
+            <span>Their email</span>
+            <input
+              className="input"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="colleague@example.com"
+              autoCapitalize="off"
+              spellCheck={false}
+            />
+          </label>
+          <SitePicker
+            sites={sites}
+            allSites={allSites}
+            siteIds={siteIds}
+            onAllSites={setAllSites}
+            onToggle={toggleSite}
           />
-        </label>
-        <SitePicker
-          sites={sites}
-          allSites={allSites}
-          siteIds={siteIds}
-          onAllSites={setAllSites}
-          onToggle={toggleSite}
-        />
-        <div>
-          <Button
-            className="btn btn-primary"
-            busyLabel="Inviting…"
-            disabled={!email.trim() || (!allSites && siteIds.length === 0)}
-            onClick={invite}
-          >
-            Send invite
-          </Button>
+          <div>
+            <Button
+              className="btn btn-primary"
+              busyLabel="Inviting…"
+              disabled={!email.trim() || (!allSites && siteIds.length === 0)}
+              onClick={invite}
+            >
+              Send invite
+            </Button>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }
