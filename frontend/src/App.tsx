@@ -283,7 +283,14 @@ export function App() {
             )}
           </div>
           <div hidden={section !== "team"}>
-            <Viewers viewerUrl={status?.viewerUrl} canManage={!!status?.viewerUserPoolId} />
+            <Viewers
+              // Once the statistics page rides the True Reach domain, hand the team the
+              // memorable address instead of the raw AWS one (both keep working).
+              viewerUrl={
+                edgeState?.viewerAtEdge && edgeState.domain ? `https://${edgeState.domain}/` : status?.viewerUrl
+              }
+              canManage={!!status?.viewerUserPoolId}
+            />
           </div>
           <div hidden={section !== "reach"}>
             <TrueReach onStatus={setEdgeState} />

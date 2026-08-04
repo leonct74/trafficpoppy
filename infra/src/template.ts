@@ -51,6 +51,7 @@ export interface CfnTemplate {
   AWSTemplateFormatVersion: string;
   Description: string;
   Parameters?: Record<string, unknown>;
+  Conditions?: Record<string, unknown>;
   Resources: Record<string, unknown>;
   Outputs: Record<string, unknown>;
 }

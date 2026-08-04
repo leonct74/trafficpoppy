@@ -25,7 +25,7 @@ import { readBootstrap, brokerCredentialsProvider } from "./boot";
 import { deploy, getStatus, teardown, tableName, type AwsCtx } from "./stack";
 import { ViewerDirectory } from "./viewers";
 import { CognitoIdentityProviderClient } from "@aws-sdk/client-cognito-identity-provider";
-import { deployEdge, edgeStatus, removeEdge, type CertStore, type EdgeCtx } from "./edge";
+import { deployEdge, edgeStatus, removeEdge, updateEdge, type CertStore, type EdgeCtx } from "./edge";
 import { DeleteItemCommand, GetItemCommand, PutItemCommand } from "@aws-sdk/client-dynamodb";
 import { SiteRegistry, lastDays } from "./sites";
 
@@ -69,6 +69,16 @@ const certStore: CertStore = {
 async function collectorHost(): Promise<string> {
   try {
     const live = await lambda.send(new GetFunctionUrlConfigCommand({ FunctionName: "TrafficPoppyCollector" }));
+    return live.FunctionUrl ? new URL(live.FunctionUrl).host : "";
+  } catch {
+    return "";
+  }
+}
+
+/** The viewer's live Function URL host — the edge's dashboard origin. Empty pre-P6a. */
+async function viewerHost(): Promise<string> {
+  try {
+    const live = await lambda.send(new GetFunctionUrlConfigCommand({ FunctionName: "TrafficPoppyViewer" }));
     return live.FunctionUrl ? new URL(live.FunctionUrl).host : "";
   } catch {
     return "";
@@ -341,12 +351,20 @@ const server = createServer(async (req, res) => {
 
     // True Reach (P5): sidecar-requested certificate + the CloudFront edge stack.
     if (parts[0] === "truereach" && parts.length === 1) {
-      if (method === "GET") return json(res, 200, { edge: await edgeStatus(edge, await collectorHost()) });
+      if (method === "GET") {
+        return json(res, 200, { edge: await edgeStatus(edge, await collectorHost(), await viewerHost()) });
+      }
       if (method === "POST") {
         const body = (await readBody(req)) as { domain?: string } | undefined;
         return json(res, 200, await deployEdge(edge, body?.domain ?? "", await collectorHost()));
       }
       if (method === "DELETE") return json(res, 200, await removeEdge(edge));
+    }
+    // Apply a pending edge update (owner-clicked, never automatic): routes the statistics
+    // page onto the True Reach domain and/or catches the template up.
+    if (parts[0] === "truereach" && parts[1] === "update" && parts.length === 2 && method === "POST") {
+      await updateEdge(edge, await collectorHost(), await viewerHost());
+      return json(res, 200, { edge: await edgeStatus(edge, await collectorHost(), await viewerHost()) });
     }
 
     // Viewer accounts (P6a, §7b) — the team who can open the browser dashboard. The pool id

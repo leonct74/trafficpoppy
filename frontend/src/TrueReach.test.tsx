@@ -6,7 +6,7 @@ import { api } from "./api";
 import type { EdgeStatus } from "./types";
 
 vi.mock("./api", () => ({
-  api: { edgeStatus: vi.fn(), edgeDeploy: vi.fn(), edgeRemove: vi.fn() },
+  api: { edgeStatus: vi.fn(), edgeDeploy: vi.fn(), edgeRemove: vi.fn(), edgeUpdate: vi.fn() },
 }));
 
 // True Reach is a paid tier (§12), so the card now asks the host whether this domain is
@@ -27,6 +27,7 @@ vi.mock("./host", async () => {
 const mocked = api as unknown as {
   edgeStatus: ReturnType<typeof vi.fn>;
   edgeDeploy: ReturnType<typeof vi.fn>;
+  edgeUpdate: ReturnType<typeof vi.fn>;
 };
 
 const edge = (over: Partial<EdgeStatus>): EdgeStatus => ({
@@ -131,5 +132,31 @@ describe("the paid gate (§12 — per domain)", () => {
     });
     render(<TrueReach />);
     expect(await screen.findByRole("button", { name: /manage billing/i })).toBeInTheDocument();
+  });
+
+  it("offers the edge update when the deployed edge is behind — never applies it itself", async () => {
+    mocked.edgeStatus.mockResolvedValue({
+      edge: edge({ phase: "ready", domain: "stats.ollydigital.com", updateAvailable: true }),
+    });
+    mocked.edgeUpdate.mockResolvedValue({
+      edge: edge({ phase: "ready", domain: "stats.ollydigital.com", viewerAtEdge: true }),
+    });
+    render(<TrueReach />);
+
+    const btn = await screen.findByRole("button", { name: /update true reach/i });
+    expect(mocked.edgeUpdate).not.toHaveBeenCalled(); // detection alone must not touch AWS
+    await userEvent.setup().click(btn);
+    await waitFor(() => expect(mocked.edgeUpdate).toHaveBeenCalled());
+    // The card re-renders from the returned state: page now on the domain, banner gone.
+    expect(await screen.findByText(/open the statistics page at/i)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /update true reach/i })).not.toBeInTheDocument();
+  });
+
+  it("shows the statistics-page address once the dashboard rides the domain", async () => {
+    mocked.edgeStatus.mockResolvedValue({
+      edge: edge({ phase: "ready", domain: "stats.ollydigital.com", viewerAtEdge: true }),
+    });
+    render(<TrueReach />);
+    expect(await screen.findByText(/open the statistics page at/i)).toBeInTheDocument();
   });
 });

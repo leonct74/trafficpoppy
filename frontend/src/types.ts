@@ -89,6 +89,10 @@ export interface EdgeStatus {
   distributionDomain?: string;
   inProgress: boolean;
   failureReason?: string;
+  /** The deployed edge is behind this build — the owner applies it with a click. */
+  updateAvailable?: boolean;
+  /** Browsing https://<domain>/ serves the statistics page (not just beacons). */
+  viewerAtEdge?: boolean;
 }
 
 /** The live-ticker read: views per minute over the last half hour, oldest first. */

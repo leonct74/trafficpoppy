@@ -3,6 +3,7 @@ import {
   CreateStackCommand,
   DeleteStackCommand,
   DescribeStacksCommand,
+  UpdateStackCommand,
   type CloudFormationClient,
 } from "@aws-sdk/client-cloudformation";
 import {
@@ -11,7 +12,8 @@ import {
   RequestCertificateCommand,
   type ACMClient,
 } from "@aws-sdk/client-acm";
-import { deployEdge, edgeStatus, removeEdge, type CertStore, type EdgeCtx } from "./edge";
+import { deployEdge, edgeStatus, removeEdge, updateEdge, type CertStore, type EdgeCtx } from "./edge";
+import { edgeTemplateKey } from "./generated/backend-bundle";
 import { TAG_APP } from "./tags";
 
 // The delete path polls a real waiter; stub it so tests don't sleep.
@@ -162,6 +164,74 @@ describe("edgeStatus — re-derived from AWS each poll, and where the machine ad
     (ctx.acm.send as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("AccessDenied"));
     const s = await edgeStatus(ctx, HOST);
     expect(s.phase).toBe("deploying"); // cert exists; detail unavailable — still not "none"
+  });
+});
+
+/**
+ * The dashboard rides the True Reach domain (founder decision 2026-08-04). The poll only
+ * ever DETECTS the pending update — applying it is a separate owner click (updateEdge),
+ * the same contract as the core stack's banner.
+ */
+describe("the edge update — detected by the poll, applied only by the owner", () => {
+  const VIEWER = "vvv.lambda-url.eu-west-1.on.aws";
+  const readyStack = (over: Record<string, unknown> = {}) => ({
+    StackStatus: "UPDATE_COMPLETE",
+    Parameters: [{ ParameterKey: "DomainName", ParameterValue: "stats.example.com" }],
+    Outputs: [{ OutputKey: "DistributionDomain", OutputValue: "d111.cloudfront.net" }],
+    Tags: [{ Key: "trafficpoppy:templateKey", Value: edgeTemplateKey }],
+    ...over,
+  });
+
+  it("flags a ready stack that predates the viewer plane, but does NOT touch AWS", async () => {
+    const { ctx, sent } = fakeCtx({ certSeed: SEED, certStatus: "ISSUED", stack: readyStack() });
+    const s = await edgeStatus(ctx, HOST, VIEWER);
+    expect(s.phase).toBe("ready");
+    expect(s.updateAvailable).toBe(true);
+    expect(s.viewerAtEdge).toBeUndefined();
+    expect(sent.some((c) => c instanceof CreateStackCommand)).toBe(false);
+  });
+
+  it("reports current + viewerAtEdge once the deployed parameters match", async () => {
+    const { ctx } = fakeCtx({
+      certSeed: SEED,
+      certStatus: "ISSUED",
+      stack: readyStack({
+        Parameters: [
+          { ParameterKey: "DomainName", ParameterValue: "stats.example.com" },
+          { ParameterKey: "ViewerUrlHost", ParameterValue: VIEWER },
+        ],
+      }),
+    });
+    const s = await edgeStatus(ctx, HOST, VIEWER);
+    expect(s.updateAvailable).toBeUndefined();
+    expect(s.viewerAtEdge).toBe(true);
+  });
+
+  it("does not nag a collector-only deployment when no viewer exists at all", async () => {
+    const { ctx } = fakeCtx({ certSeed: SEED, certStatus: "ISSUED", stack: readyStack() });
+    const s = await edgeStatus(ctx, HOST, "");
+    expect(s.updateAvailable).toBeUndefined();
+  });
+
+  it("updateEdge re-deploys the SAME domain + certificate with the viewer origin added", async () => {
+    const { ctx, sent } = fakeCtx({ certSeed: SEED, certStatus: "ISSUED", stack: readyStack() });
+    // The stack exists, so CreateStack collides and the code falls through to UpdateStack.
+    (ctx.cfn.send as ReturnType<typeof vi.fn>).mockImplementation(async (cmd: unknown) => {
+      sent.push(cmd);
+      if (cmd instanceof CreateStackCommand) throw new Error("Stack [TrafficPoppyEdgeStack] already exists");
+      return {};
+    });
+    await updateEdge(ctx, HOST, VIEWER);
+    const update = sent.find((c) => c instanceof UpdateStackCommand) as UpdateStackCommand;
+    const params = Object.fromEntries((update.input.Parameters ?? []).map((p) => [p.ParameterKey, p.ParameterValue]));
+    expect(params.DomainName).toBe("stats.example.com");
+    expect(params.CertificateArn).toBe("arn:aws:acm:us-east-1:1:certificate/abc");
+    expect(params.ViewerUrlHost).toBe(VIEWER);
+  });
+
+  it("updateEdge refuses plainly when True Reach was never set up", async () => {
+    const { ctx } = fakeCtx({ stack: null });
+    await expect(updateEdge(ctx, HOST, VIEWER)).rejects.toThrow(/isn't set up/);
   });
 });
 

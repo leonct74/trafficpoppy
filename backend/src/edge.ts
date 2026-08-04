@@ -76,6 +76,14 @@ export interface EdgeStatus {
   distributionDomain?: string;
   inProgress: boolean;
   failureReason?: string;
+  /**
+   * The deployed edge is behind this build (template drifted, or the viewer plane arrived
+   * after it was created). NEVER auto-applied — the owner clicks, same contract as the
+   * core stack's update banner.
+   */
+  updateAvailable?: boolean;
+  /** True when browsing https://<domain>/ serves the statistics page (not just beacons). */
+  viewerAtEdge?: boolean;
 }
 
 const HOSTNAME = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/;
@@ -150,7 +158,7 @@ export async function deployEdge(
  * one place the machine ADVANCES: once the certificate is issued, the poll that sees it
  * creates/updates the stack (so progress continues however long the owner took over DNS).
  */
-export async function edgeStatus(ctx: EdgeCtx, collectorUrlHost: string): Promise<EdgeStatus> {
+export async function edgeStatus(ctx: EdgeCtx, collectorUrlHost: string, viewerUrlHost = ""): Promise<EdgeStatus> {
   const cert = await storedCert(ctx);
   const stack = await describeStack(ctx.cfn);
   if (!cert && !stack) return { phase: "none", records: [], inProgress: false };
@@ -190,7 +198,7 @@ export async function edgeStatus(ctx: EdgeCtx, collectorUrlHost: string): Promis
 
   // ADVANCE: cert issued, no stack yet → deploy the distribution.
   if (cert && certStatus === "ISSUED" && collectorUrlHost && !stack) {
-    await createStack(ctx, cert.domain, collectorUrlHost, cert.arn);
+    await createStack(ctx, cert.domain, collectorUrlHost, cert.arn, viewerUrlHost);
     return { phase: "deploying", stackStatus: "CREATE_IN_PROGRESS", domain, records, inProgress: true };
   }
 
@@ -204,6 +212,16 @@ export async function edgeStatus(ctx: EdgeCtx, collectorUrlHost: string): Promis
   else if (cert) phase = "deploying"; // issued-but-stack-not-yet, or describe hiccup
   else phase = "none";
 
+  // Update detection, NEVER auto-application (the owner clicks): the deployed stack is
+  // behind when its template key drifted, or when a viewer plane exists that it doesn't
+  // route to yet (stacks from before the dashboard rode this domain).
+  const deployedTemplateKey = stack?.Tags?.find((t) => t.Key === TEMPLATE_KEY_TAG)?.Value;
+  const deployedViewerHost = stack?.Parameters?.find((p) => p.ParameterKey === "ViewerUrlHost")?.ParameterValue ?? "";
+  const updateAvailable =
+    phase === "ready" &&
+    ((!!deployedTemplateKey && deployedTemplateKey !== edgeTemplateKey) ||
+      (!!viewerUrlHost && deployedViewerHost !== viewerUrlHost));
+
   return {
     phase,
     stackStatus: stackStatus || undefined,
@@ -212,10 +230,30 @@ export async function edgeStatus(ctx: EdgeCtx, collectorUrlHost: string): Promis
     distributionDomain,
     inProgress: inProgress || phase === "validating",
     failureReason: phase === "failed" ? await firstFailure(ctx.cfn) : undefined,
+    updateAvailable: updateAvailable || undefined,
+    viewerAtEdge: (phase === "ready" && !!deployedViewerHost) || undefined,
   };
 }
 
-async function createStack(ctx: EdgeCtx, domain: string, collectorUrlHost: string, certArn: string): Promise<void> {
+/**
+ * Apply the pending edge update (new template and/or the viewer origin) to the EXISTING
+ * setup — same domain, same certificate, the distribution updates in place so the owner's
+ * DNS records never change. Only ever called by an explicit owner click.
+ */
+export async function updateEdge(ctx: EdgeCtx, collectorUrlHost: string, viewerUrlHost: string): Promise<void> {
+  const cert = await storedCert(ctx);
+  if (!cert) throw new Error("True Reach isn't set up, so there's nothing to update.");
+  if (!collectorUrlHost) throw new Error("The collector isn't deployed yet — set up TrafficPoppy first.");
+  await createStack(ctx, cert.domain, collectorUrlHost, cert.arn, viewerUrlHost);
+}
+
+async function createStack(
+  ctx: EdgeCtx,
+  domain: string,
+  collectorUrlHost: string,
+  certArn: string,
+  viewerUrlHost: string,
+): Promise<void> {
   const args = {
     StackName: edgeStackName,
     TemplateBody: edgeTemplateJson,
@@ -223,6 +261,7 @@ async function createStack(ctx: EdgeCtx, domain: string, collectorUrlHost: strin
       { ParameterKey: "DomainName", ParameterValue: domain },
       { ParameterKey: "CollectorUrlHost", ParameterValue: collectorUrlHost },
       { ParameterKey: "CertificateArn", ParameterValue: certArn },
+      { ParameterKey: "ViewerUrlHost", ParameterValue: viewerUrlHost },
     ],
     Tags: [
       ...stackTags({ ...ctx.attribution, sourceCommit: sourceCommit || undefined }),

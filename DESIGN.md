@@ -782,3 +782,21 @@ materializes.
   raw `InvalidPasswordException` with that sentence — policy lives ONCE in
   `shared/password-policy.ts`, imported by both the template and the page, with tests
   pinning both sides so told-vs-enforced can never drift.
+- 2026-08-04 — **The statistics page rides the True Reach domain (founder decision).**
+  Browsing `stats.<domain>` was a bare 404 (it was only ever the collection endpoint) —
+  now the edge routes `/t.js` + `/e` to the collector via pinned cache behaviors and
+  EVERYTHING ELSE to the viewer Lambda as a second origin, so the dashboard lives at a
+  memorable first-party address (`https://stats.ollydigital.com`) instead of the raw
+  `*.lambda-url.*.on.aws`. Design points: (1) collection paths are pinned FIRST — a slow
+  or broken page can never break beacon ingestion; (2) `ViewerUrlHost` is an optional
+  parameter behind a `HasViewer` condition, so an edge stack deployed against a pre-P6a
+  core still validates and a collector-only setup never nags; (3) the poll only DETECTS
+  the pending edge update (`updateAvailable` from the edge template-key tag + parameter
+  drift) — applying it is an owner click (`POST /truereach/update` → "Update True Reach"
+  banner), the same never-auto contract as the core stack; (4) `authorization` is
+  forwarded only in the HasViewer branch (legacy ForwardedValues, TTL 0 everywhere);
+  (5) the Team access panel hands out the pretty address once `viewerAtEdge` is true —
+  both URLs keep working. Trade-off accepted: the login page shares the domain visitors'
+  browsers beacon to, and the free-tier page rides a premium feature. No new grants.
+  Weighed and rejected: separate `dash.<domain>` (second cert + two more DNS records for
+  no isolation gain — same account, same origin Lambda either way).

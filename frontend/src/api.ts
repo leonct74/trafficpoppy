@@ -52,4 +52,6 @@ export const api = {
   edgeDeploy: (domain: string): Promise<{ operation: string }> =>
     host.invokeBackend({ method: "POST", path: "/truereach", body: { domain } }),
   edgeRemove: (): Promise<{ removed: boolean }> => host.invokeBackend({ method: "DELETE", path: "/truereach" }),
+  /** Apply a pending True Reach update (e.g. put the statistics page on the domain). */
+  edgeUpdate: (): Promise<{ edge: EdgeStatus }> => host.invokeBackend({ method: "POST", path: "/truereach/update" }),
 };

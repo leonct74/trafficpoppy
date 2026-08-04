@@ -173,6 +173,44 @@ export function TrueReach(props: { suggestedDomain?: string; onStatus?: (edge: E
             </p>
           )}
 
+          {/* The deployed edge is behind this build (e.g. the statistics page can now ride
+              this domain). Same contract as the core stack: shown, never auto-applied. */}
+          {edge.phase === "ready" && edge.updateAvailable && (
+            <div className="banner info stack" style={{ gap: 10 }}>
+              <div>
+                <strong>An update is ready for True Reach.</strong> It puts your statistics page on this
+                domain too — browsing <span className="mono">https://{edge.domain}</span> will show your
+                dashboard instead of an error page. Collection keeps running while it applies, and your
+                DNS records don't change.
+              </div>
+              <div>
+                <Button
+                  className="btn btn-primary btn-sm"
+                  busyLabel="Updating…"
+                  onClick={async () => {
+                    setErr(null);
+                    try {
+                      const { edge: e } = await api.edgeUpdate();
+                      setEdge(e);
+                      onStatus?.(e);
+                    } catch (e) {
+                      setErr((e as Error).message);
+                    }
+                  }}
+                >
+                  Update True Reach
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {edge.phase === "ready" && edge.viewerAtEdge && !edge.updateAvailable && (
+            <p className="muted" style={{ margin: 0, fontSize: 12 }}>
+              Your team can open the statistics page at{" "}
+              <span className="mono">https://{edge.domain}</span> — same sign-in as before.
+            </p>
+          )}
+
           {edge.records.map((r) => (
             <div key={r.purpose} className="card card-2 stack" style={{ marginBottom: 0, gap: 6 }}>
               <div className="spread">
