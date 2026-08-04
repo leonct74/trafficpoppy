@@ -25,8 +25,8 @@ import { readBootstrap, brokerCredentialsProvider } from "./boot";
 import { deploy, getStatus, teardown, tableName, type AwsCtx } from "./stack";
 import { ViewerDirectory } from "./viewers";
 import { CognitoIdentityProviderClient } from "@aws-sdk/client-cognito-identity-provider";
-import { deployEdge, edgeStatus, removeEdge, updateEdge, type CertStore, type EdgeCtx } from "./edge";
-import { DeleteItemCommand, GetItemCommand, PutItemCommand } from "@aws-sdk/client-dynamodb";
+import { deployEdge, edgeStatusAll, removeEdge, updateEdge, type CertStore, type EdgeCtx } from "./edge";
+import { DeleteItemCommand, PutItemCommand, QueryCommand } from "@aws-sdk/client-dynamodb";
 import { SiteRegistry, lastDays } from "./sites";
 
 const boot = readBootstrap();
@@ -42,25 +42,32 @@ const db = new DynamoDBClient({ region, credentials });
 const sites = new SiteRegistry(db, tableName);
 const lambda = new LambdaClient({ region, credentials });
 
-/** Where the sidecar remembers the True Reach certificate: a row in the owner's table. */
+/** Where the sidecar remembers True Reach certificates: rows in the owner's table, one per
+ * domain (the legacy single "truereach" key migrates on first read — edge.ts owns that). */
 const certStore: CertStore = {
-  async get(domain) {
+  async list() {
     const out = await db.send(
-      new GetItemCommand({ TableName: tableName, Key: { pk: { S: "truereach" }, sk: { S: `cert#${domain}` } } }),
+      new QueryCommand({
+        TableName: tableName,
+        KeyConditionExpression: "pk = :p AND begins_with(sk, :s)",
+        ExpressionAttributeValues: { ":p": { S: "truereach" }, ":s": { S: "cert#" } },
+      }),
     );
-    return out.Item?.value?.S;
+    return (out.Items ?? [])
+      .map((it) => ({ key: (it.sk?.S ?? "").slice("cert#".length), value: it.value?.S ?? "" }))
+      .filter((r) => r.key && r.value);
   },
-  async put(domain, arn) {
+  async put(key, value) {
     await db.send(
       new PutItemCommand({
         TableName: tableName,
-        Item: { pk: { S: "truereach" }, sk: { S: `cert#${domain}` }, value: { S: arn } },
+        Item: { pk: { S: "truereach" }, sk: { S: `cert#${key}` }, value: { S: value } },
       }),
     );
   },
-  async del(domain) {
+  async del(key) {
     await db.send(
-      new DeleteItemCommand({ TableName: tableName, Key: { pk: { S: "truereach" }, sk: { S: `cert#${domain}` } } }),
+      new DeleteItemCommand({ TableName: tableName, Key: { pk: { S: "truereach" }, sk: { S: `cert#${key}` } } }),
     );
   },
 };
@@ -356,22 +363,27 @@ const server = createServer(async (req, res) => {
       return json(res, 200, { ok: true });
     }
 
-    // True Reach (P5): sidecar-requested certificate + the CloudFront edge stack.
+    // True Reach (P5, multi-domain since 2026-08-04): sidecar-requested certificates +
+    // one small CloudFront stack per domain.
     if (parts[0] === "truereach" && parts.length === 1) {
       if (method === "GET") {
-        return json(res, 200, { edge: await edgeStatus(edge, await collectorHost(), await viewerHost()) });
+        return json(res, 200, { edges: await edgeStatusAll(edge, await collectorHost(), await viewerHost()) });
       }
       if (method === "POST") {
         const body = (await readBody(req)) as { domain?: string } | undefined;
         return json(res, 200, await deployEdge(edge, body?.domain ?? "", await collectorHost()));
       }
-      if (method === "DELETE") return json(res, 200, await removeEdge(edge));
     }
-    // Apply a pending edge update (owner-clicked, never automatic): routes the statistics
-    // page onto the True Reach domain and/or catches the template up.
+    // Remove ONE domain's True Reach (its stack + certificate; data and other domains untouched).
+    if (parts[0] === "truereach" && parts.length === 2 && method === "DELETE" && parts[1] !== "update") {
+      return json(res, 200, await removeEdge(edge, decodeURIComponent(parts[1]!)));
+    }
+    // Apply one domain's pending edge update (owner-clicked, never automatic): routes the
+    // statistics page onto that True Reach domain and/or catches the template up.
     if (parts[0] === "truereach" && parts[1] === "update" && parts.length === 2 && method === "POST") {
-      await updateEdge(edge, await collectorHost(), await viewerHost());
-      return json(res, 200, { edge: await edgeStatus(edge, await collectorHost(), await viewerHost()) });
+      const body = (await readBody(req)) as { domain?: string } | undefined;
+      await updateEdge(edge, body?.domain ?? "", await collectorHost(), await viewerHost());
+      return json(res, 200, { edges: await edgeStatusAll(edge, await collectorHost(), await viewerHost()) });
     }
 
     // Viewer accounts (P6a, §7b) — the team who can open the browser dashboard. The pool id

@@ -43,8 +43,8 @@ export function App() {
   const [openSite, setOpenSite] = useState<Site | null>(null);
   /** Within an open site: the Integrate (use-your-data) screen instead of the dashboard. */
   const [integrating, setIntegrating] = useState(false);
-  /** The True Reach edge state — when ready, snippets serve from the custom domain. */
-  const [edgeState, setEdgeState] = useState<EdgeStatus | null>(null);
+  /** The True Reach edges (one per domain) — ready ones serve snippets first-party. */
+  const [edgeState, setEdgeState] = useState<EdgeStatus[]>([]);
   const [section, setSection] = useState<SectionKey>("sites");
   const pollRef = useRef<number | null>(null);
 
@@ -277,18 +277,21 @@ export function App() {
                 // ONLY its own registrable domain, so Sites applies it per-site — never as a
                 // blanket origin for every site (that would point one site at another's domain).
                 collectorUrl={status.collectorUrl}
-                trueReachDomain={edgeState?.phase === "ready" ? edgeState.domain : undefined}
+                trueReachDomains={edgeState
+                  .filter((e) => e.phase === "ready" && e.domain)
+                  .map((e) => e.domain!)}
                 onOpen={setOpenSite}
               />
             )}
           </div>
           <div hidden={section !== "team"}>
             <Viewers
-              // Once the statistics page rides the True Reach domain, hand the team the
+              // Once the statistics page rides a True Reach domain, hand the team the
               // memorable address instead of the raw AWS one (both keep working).
-              viewerUrl={
-                edgeState?.viewerAtEdge && edgeState.domain ? `https://${edgeState.domain}/` : status?.viewerUrl
-              }
+              viewerUrl={(() => {
+                const pretty = edgeState.find((e) => e.viewerAtEdge && e.domain);
+                return pretty ? `https://${pretty.domain}/` : status?.viewerUrl;
+              })()}
               canManage={!!status?.viewerUserPoolId}
             />
           </div>

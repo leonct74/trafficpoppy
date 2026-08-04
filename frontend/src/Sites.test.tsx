@@ -50,7 +50,7 @@ describe("Sites screen", () => {
         { id: "mail", name: "MailPoppy", domain: "mailpoppy.com", createdAt: "2026-07-18" },
       ],
     });
-    render(<Sites collectorUrl={URL} trueReachDomain="stats.ollydigital.com" />);
+    render(<Sites collectorUrl={URL} trueReachDomains={["stats.ollydigital.com"]} />);
 
     const snippets = await screen.findAllByText(/<script defer/i);
     const texts = snippets.map((n) => n.textContent);

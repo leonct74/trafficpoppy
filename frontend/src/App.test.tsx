@@ -57,7 +57,7 @@ beforeEach(() => {
   mocked.meta.mockResolvedValue({ account: { region: "eu-west-1", accountId: "1" }, connectionId: "c1" });
   mocked.listSites.mockResolvedValue({ sites: [] });
   mocked.listViewers.mockResolvedValue({ viewers: [] });
-  mocked.edgeStatus.mockResolvedValue({ edge: { phase: "none", records: [], inProgress: false } });
+  mocked.edgeStatus.mockResolvedValue({ edges: [] });
 });
 
 /**

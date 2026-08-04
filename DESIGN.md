@@ -868,3 +868,22 @@ materializes.
   — caps bound the payload, dashboards fold long lists; the desktop BarList folds at 12
   with "Show all". Still parked as a DESIGN decision, not a polish item: cross-dimension
   drill-down (segments) — needs per-combination counters, a real data-model cost.
+- 2026-08-04 — **MULTI-DOMAIN True Reach: one small edge stack per domain.** The last
+  functional blocker before per-domain pricing can sell domain #2. Decision (implementation,
+  recorded): **each domain gets its own stack** (`TrafficPoppyEdge-<sanitized-domain>`, own
+  sidecar-requested certificate, own distribution) rather than one shared distribution with
+  many aliases — distributions cost nothing to exist (billing is per request either way),
+  each domain validates its own cert instead of re-issuing a shared SAN cert on every add,
+  domain #3 cannot break domains #1–2, and add/remove stays surgical, which is exactly the
+  per-domain subscription's shape. Mechanics: the cert store becomes a per-domain registry
+  (`cert#<domain>` → `domain|arn|stackName`); **the v1 single-domain row (fixed key
+  `truereach`, 2-part value) migrates silently on first read and keeps v1's stack name**,
+  so the live ollydigital deployment is never re-created and its DNS never changes. API:
+  `GET /truereach → {edges: []}`, `POST` adds a domain, `DELETE /truereach/<domain>` and
+  `POST /truereach/update {domain}` act on one domain; teardown with no domain sweeps all.
+  UI: the True Reach card lists every domain with its own lifecycle (records, update
+  banner, subscription badge + Manage billing, type-to-confirm remove) + an add-another-
+  domain flow gated per domain (§12); Sites picks the first-party domain per site from the
+  ready list; Team access hands out the first `viewerAtEdge` address. Entitlement was
+  already per-domain — nothing to change there. No manifest changes (stack names stay
+  under `TrafficPoppy*`). 325 tests green.

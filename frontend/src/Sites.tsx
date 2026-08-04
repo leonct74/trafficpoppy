@@ -28,10 +28,11 @@ export function isFirstPartyFor(siteDomain: string | undefined, edgeDomain: stri
 /**
  * The Sites screen (DESIGN.md §7.1): add a site → get the one-line snippet with a copy
  * button → see whether data is arriving. `collectorUrl` is the deployed AWS Function URL —
- * the free-tier origin. `trueReachDomain`, when set, is the live True Reach custom subdomain;
- * it's applied per-site, only to the site it's actually first-party for.
+ * the free-tier origin. `trueReachDomains` are the LIVE True Reach custom subdomains
+ * (multi-domain since 2026-08-04); each is applied per-site, only to the site it's
+ * actually first-party for.
  */
-export function Sites(props: { collectorUrl: string; trueReachDomain?: string; onOpen?: (site: Site) => void }) {
+export function Sites(props: { collectorUrl: string; trueReachDomains?: string[]; onOpen?: (site: Site) => void }) {
   const [sites, setSites] = useState<Site[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [name, setName] = useState("");
@@ -83,7 +84,7 @@ export function Sites(props: { collectorUrl: string; trueReachDomain?: string; o
               key={s.id}
               site={s}
               collectorUrl={props.collectorUrl}
-              trueReachDomain={props.trueReachDomain}
+              trueReachDomains={props.trueReachDomains}
               onRemoved={load}
               onOpen={props.onOpen}
             />
@@ -96,7 +97,7 @@ export function Sites(props: { collectorUrl: string; trueReachDomain?: string; o
           Add a site
         </div>
 
-        <HelperPromptBanner collectorUrl={props.collectorUrl} trueReachDomain={props.trueReachDomain} />
+        <HelperPromptBanner collectorUrl={props.collectorUrl} trueReachDomain={props.trueReachDomains?.[0]} />
 
         {/* Labels and placeholders come from SITE_FIELDS so the helper prompt describes
             exactly these fields, in exactly these words (AGENTS.md §9, rule 1). */}
@@ -167,15 +168,17 @@ function HelperPromptBanner(props: { collectorUrl: string; trueReachDomain?: str
 function SiteRow(props: {
   site: Site;
   collectorUrl: string;
-  trueReachDomain?: string;
+  trueReachDomains?: string[];
   onRemoved: () => void;
   onOpen?: (site: Site) => void;
 }) {
-  const { site, collectorUrl, trueReachDomain } = props;
-  // First-party only when the True Reach subdomain belongs to THIS site's domain.
-  const firstParty = !!trueReachDomain && isFirstPartyFor(site.domain, trueReachDomain);
-  // A True Reach edge exists, but for a different domain than this site → upsell hint.
-  const canUpsell = !!trueReachDomain && !firstParty;
+  const { site, collectorUrl } = props;
+  const domains = props.trueReachDomains ?? [];
+  // First-party only when a True Reach subdomain belongs to THIS site's domain.
+  const trueReachDomain = domains.find((d) => isFirstPartyFor(site.domain, d));
+  const firstParty = !!trueReachDomain;
+  // True Reach edges exist, but none for this site's domain → upsell hint.
+  const canUpsell = domains.length > 0 && !firstParty;
   const snippet = buildSnippet(firstParty ? `https://${trueReachDomain}` : collectorUrl, site.id);
   const [stats, setStats] = useState<SiteStats | null>(null);
   const [confirming, setConfirming] = useState(false);

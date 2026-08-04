@@ -51,11 +51,13 @@ export const api = {
   updateSiteSettings: (id: string, settings: { saltDays: number }): Promise<{ saltDays: number }> =>
     host.invokeBackend({ method: "PUT", path: `/sites/${encodeURIComponent(id)}/settings`, body: settings }),
 
-  /** True Reach (custom domain): live state, deploy, remove. */
-  edgeStatus: (): Promise<{ edge: EdgeStatus }> => host.invokeBackend({ method: "GET", path: "/truereach" }),
+  /** True Reach (custom domains, one small stack each): live state, add, remove, update. */
+  edgeStatus: (): Promise<{ edges: EdgeStatus[] }> => host.invokeBackend({ method: "GET", path: "/truereach" }),
   edgeDeploy: (domain: string): Promise<{ operation: string }> =>
     host.invokeBackend({ method: "POST", path: "/truereach", body: { domain } }),
-  edgeRemove: (): Promise<{ removed: boolean }> => host.invokeBackend({ method: "DELETE", path: "/truereach" }),
-  /** Apply a pending True Reach update (e.g. put the statistics page on the domain). */
-  edgeUpdate: (): Promise<{ edge: EdgeStatus }> => host.invokeBackend({ method: "POST", path: "/truereach/update" }),
+  edgeRemove: (domain: string): Promise<{ removed: string[] }> =>
+    host.invokeBackend({ method: "DELETE", path: `/truereach/${encodeURIComponent(domain)}` }),
+  /** Apply one domain's pending True Reach update (e.g. put the statistics page on it). */
+  edgeUpdate: (domain: string): Promise<{ edges: EdgeStatus[] }> =>
+    host.invokeBackend({ method: "POST", path: "/truereach/update", body: { domain } }),
 };
