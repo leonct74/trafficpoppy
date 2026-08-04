@@ -500,8 +500,13 @@ function Skeleton() {
 }
 
 /** A ranked list with proportional bars — the Plausible-style read, design-kit colors. */
+/** How many rows a list shows before collapsing behind "Show all". */
+const LIST_FOLD = 12;
+
 function BarList(props: { title: string; rows: { key: string; count: number }[]; empty: string }) {
   const max = Math.max(1, ...props.rows.map((r) => r.count));
+  const [expanded, setExpanded] = useState(false);
+  const shown = expanded ? props.rows : props.rows.slice(0, LIST_FOLD);
   return (
     <div className="card card-2 stack" style={{ marginBottom: 0 }}>
       <div className="section-title" style={{ margin: 0 }}>
@@ -513,7 +518,7 @@ function BarList(props: { title: string; rows: { key: string; count: number }[];
         </span>
       ) : (
         <div className="stack" style={{ gap: 6 }}>
-          {props.rows.map((r) => (
+          {shown.map((r) => (
             <div key={r.key} style={{ position: "relative", padding: "4px 8px" }}>
               <div
                 aria-hidden
@@ -536,6 +541,11 @@ function BarList(props: { title: string; rows: { key: string; count: number }[];
               </div>
             </div>
           ))}
+          {props.rows.length > LIST_FOLD && (
+            <button className="btn btn-ghost btn-sm" onClick={() => setExpanded((v) => !v)}>
+              {expanded ? "Show fewer" : `Show all ${props.rows.length}`}
+            </button>
+          )}
         </div>
       )}
     </div>

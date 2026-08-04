@@ -101,12 +101,23 @@ export async function route(req: HttpRequest, deps: ViewerDeps): Promise<HttpRes
       return json(200, { live: reduceLive(siteId, await deps.recentRows(siteId), deps.now()) });
     }
 
-    const requested = Number(req.query.days ?? "7");
-    // Clamp: an unbounded `days` is a free way to make the owner's account do 10k queries.
-    const days = Number.isFinite(requested) ? Math.min(Math.max(Math.trunc(requested), 1), 90) : 7;
-    const window = lastDays(days, deps.today());
+    // Either a rolling `days=N` ending today, or an explicit `from`/`to` (both inclusive,
+    // YYYY-MM-DD). Both clamp to 90 days — an unbounded window is a free way to make the
+    // owner's account do 10k queries — and `to` never exceeds today (nothing to read there).
+    const DATE = /^\d{4}-\d{2}-\d{2}$/;
+    const { from, to } = req.query;
+    let window: string[];
+    if (from && to && DATE.test(from) && DATE.test(to) && from <= to) {
+      const end = to < deps.today() ? to : deps.today();
+      const span = Math.round((Date.parse(`${end}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000) + 1;
+      window = lastDays(Math.min(Math.max(span, 1), 90), end);
+    } else {
+      const requested = Number(req.query.days ?? "7");
+      const days = Number.isFinite(requested) ? Math.min(Math.max(Math.trunc(requested), 1), 90) : 7;
+      window = lastDays(days, deps.today());
+    }
     const prevEnd = new Date(`${window[0]}T00:00:00Z`).getTime() - 86_400_000;
-    const prevWindow = lastDays(days, new Date(prevEnd).toISOString().slice(0, 10));
+    const prevWindow = lastDays(window.length, new Date(prevEnd).toISOString().slice(0, 10));
 
     const [perDay, perPrevDay] = await Promise.all([
       Promise.all(window.map((d) => deps.dayRows(siteId, d))),

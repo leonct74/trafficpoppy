@@ -95,7 +95,7 @@ svg text{fill:var(--mut);font-size:10px}
 "use strict";
 var REGION=${js(cfg.region)},CLIENT=${js(cfg.userPoolClientId)};
 var COG="https://cognito-idp."+REGION+".amazonaws.com/";
-var tok=null,sites=[],cur=null,days=7,challengeSession=null;
+var tok=null,sites=[],cur=null,days=7,custom=null,challengeSession=null,csvStore={};
 var $=function(id){return document.getElementById(id)};
 function show(el,on){el.classList[on?"remove":"add"]("hide")}
 function esc(s){var d=document.createElement("div");d.textContent=s==null?"":String(s);return d.innerHTML}
@@ -189,14 +189,37 @@ function renderSites(){
   });
 }
 
-function open(site){cur=site;loadDetail()}
+function open(site){cur=site;custom=null;loadDetail()}
 
 function loadDetail(){
   show($("sites"),false);show($("detail"),true);
   $("title").textContent=cur.name;
   $("detail").innerHTML='<div class="card mut">Loading…</div>';
-  api("/api/sites/"+encodeURIComponent(cur.id)+"/range?days="+days).then(function(d){renderDetail(d.range)})
+  var q=custom?("from="+custom.from+"&to="+custom.to):("days="+days);
+  var base="/api/sites/"+encodeURIComponent(cur.id);
+  // Range and the last-30-minutes ticker load together; the ticker is best-effort.
+  Promise.all([
+    api(base+"/range?"+q),
+    api(base+"/live").catch(function(){return null;})
+  ]).then(function(rs){renderDetail(rs[0].range,rs[1]&&rs[1].live)})
     .catch(function(e){$("detail").innerHTML='<div class="err">'+esc(e.message)+"</div>"});
+}
+
+// One CSV per list card, built from the same rows the bars render — nothing re-fetched.
+function toCsv(rows){
+  return "name,count\\n"+rows.map(function(r){
+    var k=String(r.key==null?"":r.key);
+    return '"'+k.replace(/"/g,'""')+'",'+r.count;
+  }).join("\\n");
+}
+function downloadCsv(id){
+  var e=csvStore[id];if(!e)return;
+  var blob=new Blob([toCsv(e.rows)],{type:"text/csv"});
+  var a=document.createElement("a");
+  a.href=URL.createObjectURL(blob);
+  a.download=e.name+".csv";
+  document.body.appendChild(a);a.click();
+  setTimeout(function(){URL.revokeObjectURL(a.href);a.remove()},0);
 }
 
 // ── charts (hand-rolled SVG — no libraries, nothing loaded from anywhere) ──────────
@@ -204,7 +227,7 @@ function loadDetail(){
 // Daily trend: views area + uniques line. Hour bars when the range is a single day.
 function trendSvg(r){
   var W=920,H=200,P=28;
-  if(days===1){
+  if((r.days||[]).length<=1){
     var hours=r.hours||[],hm=Math.max.apply(null,hours.concat([1]));
     var bw=(W-2*P)/24;
     var bars="";
@@ -307,13 +330,22 @@ function flowSvg(r){
     +"</svg>";
 }
 
+var FOLD=8,csvSeq=0;
 function bars(title,rows,empty,labelOf){
   if(!rows||!rows.length)return '<div class="card"><h2>'+title+'</h2><p class="mut">'+empty+"</p></div>";
+  var id="l"+(++csvSeq);
+  csvStore[id]={name:title.toLowerCase().replace(/[^a-z0-9]+/g,"-"),rows:rows};
   var max=rows[0].count||1;
-  return '<div class="card"><h2>'+title+"</h2>"+rows.map(function(r){
+  function row(r){
     var label=labelOf?labelOf(r.key):esc(r.key||"(direct)");
     return '<div class="brow"><span>'+label+'</span><span><span class="bar" style="display:block;width:'+Math.max(2,Math.round(r.count/max*100))+'%"></span></span><span>'+nfmt(r.count)+"</span></div>";
-  }).join("")+"</div>";
+  }
+  var head=rows.slice(0,FOLD).map(row).join("");
+  var tail=rows.length>FOLD?'<div class="hide" id="more-'+id+'">'+rows.slice(FOLD).map(row).join("")+"</div>":"";
+  var controls='<div class="row" style="margin-top:8px">'
+    +(rows.length>FOLD?'<button class="ghost tab" data-more="'+id+'">Show all '+rows.length+"</button>":"")
+    +'<button class="ghost tab" data-csv="'+id+'">CSV</button></div>';
+  return '<div class="card"><h2>'+title+"</h2>"+head+tail+controls+"</div>";
 }
 
 function kpi(label,value,detail){
@@ -322,26 +354,75 @@ function kpi(label,value,detail){
 
 function pct(a,b){return b>0?Math.round(a/b*100)+"%":"—"}
 
-function renderDetail(r){
-  var tabs=[1,7,30].map(function(d){return '<button class="tab'+(d===days?" on":"")+'" data-d="'+d+'">'+(d===1?"Today":d+" days")+"</button>"}).join(" ");
+// Δ vs the previous window of the same length — green up, red down, honest about a 0 base.
+function delta(now,prev){
+  if(prev===undefined||prev===null)return "";
+  if(prev===0)return now>0?'<span style="color:var(--ok)">new</span>':"";
+  var d=Math.round((now-prev)/prev*100);
+  if(d===0)return '<span class="mut">±0%</span>';
+  return d>0?'<span style="color:var(--ok)">▲ '+d+"%</span>":'<span style="color:#ff7b72">▼ '+Math.abs(d)+"%</span>";
+}
+
+// Pages that gained/lost the most vs the previous window — the "what changed" question.
+function movers(cur,prev){
+  if(!prev||!prev.length)return null;
+  var m={};(prev||[]).forEach(function(p){m[p.key]=p.count});
+  var seen={},out=[];
+  (cur||[]).forEach(function(c){seen[c.key]=1;out.push({key:c.key,count:c.count,d:c.count-(m[c.key]||0)})});
+  (prev||[]).forEach(function(p){if(!seen[p.key])out.push({key:p.key,count:0,d:-p.count})});
+  out.sort(function(a,b){return Math.abs(b.d)-Math.abs(a.d)||a.key.localeCompare(b.key)});
+  out=out.filter(function(r){return r.d!==0}).slice(0,6);
+  return out.length?out:null;
+}
+
+// "Right now": per-minute views over the last half hour, from the TTL'd ticker partition.
+function liveSvg(l){
+  var W=340,H=44,n=l.minutes.length,bw=W/n;
+  var max=1;l.minutes.forEach(function(m){max=Math.max(max,m.views)});
+  return '<svg viewBox="0 0 '+W+" "+H+'" style="width:100%;height:44px">'+l.minutes.map(function(m,i){
+    var h=m.views?Math.max(3,Math.round(m.views/max*(H-4))):2;
+    return '<rect x="'+(i*bw+1)+'" y="'+(H-h)+'" width="'+(bw-2)+'" height="'+h+'" rx="1.5" fill="'+(m.views?"var(--ok)":"#2c333d")+'"><title>'+m.minute.slice(11)+" — "+nfmt(m.views)+"</title></rect>";
+  }).join("")+"</svg>";
+}
+
+function renderDetail(r,live){
+  csvStore={};csvSeq=0;
+  var tabs=[1,7,30].map(function(d){return '<button class="tab'+(!custom&&d===days?" on":"")+'" data-d="'+d+'">'+(d===1?"Today":d+" days")+"</button>"}).join(" ")
+    +' <button class="tab'+(custom?" on":"")+'" id="customBtn">'+(custom?esc(custom.from)+" → "+esc(custom.to):"Custom")+"</button>";
   var entriesTotal=0;(r.entries||[]).forEach(function(e){entriesTotal+=e.count});
   var depth=entriesTotal>0?(r.views/entriesTotal).toFixed(1):null;
   var known=(r.newVisitors||0)+(r.returningVisitors||0);
+  var p=r.prev||{};
 
   var html='<div class="spread" style="margin-bottom:12px"><button class="ghost tab" id="back">← All sites</button><div class="row">'+tabs+"</div></div>";
+  html+='<div id="customWrap" class="card hide"><div class="row">'
+    +'<label class="mut">From<input id="fromD" type="date"></label>'
+    +'<label class="mut">To<input id="toD" type="date"></label>'
+    +'<button id="applyD" style="align-self:end">Apply</button>'
+    +'</div><p class="mut" style="margin:8px 0 0">Up to 90 days at a time.</p></div>';
+
   html+='<div class="grid" style="margin-bottom:16px">'
-    +kpi("Page views",nfmt(r.views))
-    +kpi("Unique visitors",nfmt(r.uniques),"daily uniques, summed")
+    +kpi("Page views",nfmt(r.views),delta(r.views,p.views))
+    +kpi("Unique visitors",nfmt(r.uniques),delta(r.uniques,p.uniques)||"daily uniques, summed")
     +kpi("New visitors",known?nfmt(r.newVisitors):"—",known?pct(r.newVisitors,known)+" of known":"needs fresh data")
     +kpi("Returning",known?nfmt(r.returningVisitors):"—",r.returningVisitors===0&&known?"within the salt window":"came back in the window")
     +kpi("Pages per visit",depth||"—",depth?nfmt(entriesTotal)+" visits":"")
     +"</div>";
   if(!r.receiving)html+='<div class="card mut">No visits recorded in this period yet.</div>';
 
+  if(live&&live.minutes)html+='<div class="card"><div class="spread"><h2 style="margin:0">Right now</h2>'
+    +'<span class="mut">'+nfmt(live.views)+" views in the last 30 minutes</span></div>"+liveSvg(live)+"</div>";
+
   var trend=trendSvg(r);
-  if(trend)html+='<div class="card"><h2>'+(days===1?"Views by hour (UTC)":"Views & visitors by day")+"</h2>"+trend+"</div>";
+  if(trend)html+='<div class="card"><h2>'+((r.days||[]).length<=1?"Views by hour (UTC)":"Views & visitors by day")+"</h2>"+trend+"</div>";
   var flow=flowSvg(r);
   if(flow)html+='<div class="card"><h2>Traffic flow — in, through, and out</h2>'+flow+'<p class="mut" style="margin:8px 0 0">Where visits enter, the pages they move through, and where they leave. Counts, never individual visitors.</p></div>';
+
+  var mv=movers(r.topPages,p.topPages);
+  if(mv)html+='<div class="card"><h2>Top movers vs the previous period</h2>'+mv.map(function(m){
+    var up=m.d>0;
+    return '<div class="brow"><span>'+esc(m.key)+'</span><span></span><span style="color:'+(up?"var(--ok)":"#ff7b72")+'">'+(up?"▲ +":"▼ ")+nfmt(m.d)+"</span></div>";
+  }).join("")+"</div>";
 
   html+='<div class="grid2">';
   html+=bars("Top pages",r.topPages,"No pages yet");
@@ -357,7 +438,20 @@ function renderDetail(r){
   $("detail").innerHTML=html;
   $("back").addEventListener("click",renderSites);
   Array.prototype.forEach.call($("detail").querySelectorAll(".tab[data-d]"),function(el){
-    el.addEventListener("click",function(){days=+el.getAttribute("data-d");loadDetail()});
+    el.addEventListener("click",function(){custom=null;days=+el.getAttribute("data-d");loadDetail()});
+  });
+  $("customBtn").addEventListener("click",function(){$("customWrap").classList.toggle("hide")});
+  if(custom){$("fromD").value=custom.from;$("toD").value=custom.to;}
+  $("applyD").addEventListener("click",function(){
+    var f=$("fromD").value,t=$("toD").value;
+    if(f&&t&&f<=t){custom={from:f,to:t};loadDetail()}
+  });
+  // One delegated handler covers every list's Show-all and CSV controls.
+  $("detail").addEventListener("click",function(ev){
+    var el=ev.target;if(!el||!el.getAttribute)return;
+    var more=el.getAttribute("data-more"),csv=el.getAttribute("data-csv");
+    if(more){var m=$("more-"+more);var open=m.classList.toggle("hide");el.textContent=open?"Show all "+(csvStore[more].rows.length):"Show fewer";}
+    if(csv)downloadCsv(csv);
   });
 }
 

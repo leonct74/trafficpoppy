@@ -856,3 +856,15 @@ materializes.
   written before this release have no entry/edge/new rows — the dashboards show "—" or hide
   the card rather than implying zeros. Collector Lambda code + t.js changed ⇒ next stack
   update ships it (updateAvailable watches the code key).
+- 2026-08-04 — **Dashboard polish pass (founder: "still feels quite basic").** Viewer page
+  gains: a **"Right now" card** (per-minute views, last 30 min — the ticker partition was
+  already served, just unused); **Δ% chips** on views/visitors vs the previous same-length
+  window (`prev` was also already computed, unused); a **Top movers** card (biggest page
+  gains/losses); **collapsible lists + one-click CSV export** on every list (client-side
+  Blob, no re-fetch — fine here because this is a normal browser tab, not the sandboxed
+  poppy frame); and a **custom from–to range**: the viewer API now accepts `from`/`to`
+  (inclusive, 90-day clamp, never past today, same-length prev window; junk falls back to
+  the rolling default). Shared rank caps raised (pages/referrers 50, utm 25, countries 250)
+  — caps bound the payload, dashboards fold long lists; the desktop BarList folds at 12
+  with "Show all". Still parked as a DESIGN decision, not a polish item: cross-dimension
+  drill-down (segments) — needs per-combination counters, a real data-model cost.

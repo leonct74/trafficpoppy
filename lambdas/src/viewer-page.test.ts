@@ -67,4 +67,18 @@ describe("dashboard v2 — professional and fully self-contained", () => {
     expect(page).toContain("Returning");
     expect(page).toContain("Pages per visit");
   });
+
+  it("carries the polish pass: live card, deltas, movers, CSV export, custom range", () => {
+    expect(page).toContain("Right now"); // last-30-minutes ticker card
+    expect(page).toContain("function delta"); // Δ% vs the previous window
+    expect(page).toContain("Top movers vs the previous period");
+    expect(page).toContain("downloadCsv"); // every list exports client-side
+    expect(page).toMatch(/type="date"/); // custom from–to picker
+    expect(page).toContain("from="); // and it queries the explicit-range API
+  });
+
+  it("CSV export builds from rows already on the page — no re-fetch, no external call", () => {
+    expect(page).toContain("URL.createObjectURL");
+    expect(page).not.toMatch(/fetch\([^)]*csv/i);
+  });
 });

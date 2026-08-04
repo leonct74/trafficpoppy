@@ -144,6 +144,43 @@ describe("reads", () => {
     expect(JSON.parse(res.body).range.days).toHaveLength(7);
   });
 
+  it("accepts an explicit from/to range, inclusive on both ends", async () => {
+    const res = await route(
+      { method: "GET", path: "/api/sites/aaa/range", query: { from: "2026-07-01", to: "2026-07-03" }, headers: AUTH },
+      deps({ authenticate: async () => claimsFor([ALL_SITES_GROUP]) }),
+    );
+    const { range } = JSON.parse(res.body);
+    expect(range.from).toBe("2026-07-01");
+    expect(range.to).toBe("2026-07-03");
+    expect(range.days).toHaveLength(3);
+  });
+
+  it("clamps from/to at 90 days and never reads past today", async () => {
+    const seen: string[] = [];
+    const d = deps({
+      authenticate: async () => claimsFor([ALL_SITES_GROUP]),
+      dayRows: async (_s, day) => {
+        seen.push(day);
+        return [];
+      },
+    });
+    await route(
+      { method: "GET", path: "/api/sites/aaa/range", query: { from: "2020-01-01", to: "2030-01-01" }, headers: AUTH },
+      d,
+    );
+    // 90 max ending TODAY (2026-07-25), plus the same-length previous window.
+    expect(seen.length).toBe(180);
+    expect(seen.every((day) => day <= "2026-07-25")).toBe(true);
+  });
+
+  it("junk from/to falls back to the rolling default instead of erroring", async () => {
+    const res = await route(
+      { method: "GET", path: "/api/sites/aaa/range", query: { from: "07/01/2026", to: "yesterday" }, headers: AUTH },
+      deps(),
+    );
+    expect(JSON.parse(res.body).range.days).toHaveLength(7);
+  });
+
   it("serves the live ticker", async () => {
     const res = await get("/api/sites/aaa/live", AUTH);
     const { live } = JSON.parse(res.body);
