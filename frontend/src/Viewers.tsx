@@ -87,10 +87,21 @@ export function Viewers(props: { viewerUrl?: string; canManage: boolean }) {
         )}
       </div>
 
-      <p className="muted" style={{ margin: 0, fontSize: 13 }}>
-        Everyone you invite signs in at the link above, from any browser or phone. They can only read — never
-        change your sites, your AWS, or anything else. Their accounts live in your own AWS.
-      </p>
+      {props.viewerUrl ? (
+        <p className="muted" style={{ margin: 0, fontSize: 13 }}>
+          Everyone you invite signs in at the link above, from any browser or phone. They can only read — never
+          change your sites, your AWS, or anything else. Their accounts live in your own AWS.
+        </p>
+      ) : (
+        // The Online Dashboard gate (founder decision 2026-08-04): browser access is part
+        // of the paid tier. Invites still work now — the dashboard lights up when a domain
+        // is set up in the Online dashboard tab.
+        <div className="banner info">
+          The browser dashboard is part of the <strong>Online Dashboard</strong> upgrade. Set up a domain in
+          the Online dashboard tab and everyone you invite here can open the statistics from any browser or
+          phone — sites without the upgrade stay visible in this app only.
+        </div>
+      )}
 
       {err && <div className="banner err">{err}</div>}
       {invited && (

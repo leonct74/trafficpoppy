@@ -168,10 +168,11 @@ function signout(){
 }
 $("signout").addEventListener("click",signout);
 
+var gated=false;
 function start(){
   show($("login"),false);show($("app"),true);
   api("/api/sites").then(function(d){
-    sites=d.sites||[];
+    sites=d.sites||[];gated=!!d.gated;
     $("who").textContent=(d.viewer&&d.viewer.email)||"";
     renderSites();
   }).catch(function(e){$("err").innerHTML='<div class="err">'+esc(e.message)+"</div>"});
@@ -180,7 +181,13 @@ function start(){
 function renderSites(){
   show($("detail"),false);show($("sites"),true);
   $("title").textContent="Your sites";
-  if(!sites.length){$("sites").innerHTML='<p class="mut">No sites have been shared with you yet.</p>';return}
+  if(!sites.length){
+    // Honest empty states: "not shared with you" and "not part of the plan" are
+    // different situations and must not wear the same sentence.
+    $("sites").innerHTML=gated
+      ?'<p class="mut">The online dashboard is part of the Online Dashboard upgrade, which isn\\'t set up yet. The site owner can turn it on from the TrafficPoppy app.</p>'
+      :'<p class="mut">No sites have been shared with you yet.</p>';
+    return}
   $("sites").innerHTML=sites.map(function(s,i){
     return '<div class="site" data-i="'+i+'"><div><strong>'+esc(s.name)+'</strong><div class="mut">'+esc(s.domain)+"</div></div><span class=\\"mut\\">View →</span></div>";
   }).join("");

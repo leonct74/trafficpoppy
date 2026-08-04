@@ -6,24 +6,11 @@ import { SITE_FIELDS, SNIPPET_STEP, TRUE_REACH, buildSnippet } from "./catalogue
 import { buildHelperPrompt } from "./helper-prompt";
 import type { Site, SiteStats } from "./types";
 
-/**
- * Does `edgeDomain` (e.g. stats.ollydigital.com) collect first-party for a site whose own
- * address is `siteDomain` (e.g. ollydigital.com)? True only when the edge domain IS, or is a
- * subdomain of, the site's registrable domain — never across two different domains. This is
- * what keeps True Reach per-site: one custom subdomain can't be first-party for every site.
- */
-export function isFirstPartyFor(siteDomain: string | undefined, edgeDomain: string): boolean {
-  if (!siteDomain) return false;
-  const site = siteDomain
-    .trim()
-    .toLowerCase()
-    .replace(/^https?:\/\//, "")
-    .replace(/^www\./, "")
-    .replace(/[/:].*$/, "");
-  if (!site) return false;
-  const edge = edgeDomain.trim().toLowerCase();
-  return edge === site || edge.endsWith(`.${site}`);
-}
+// The matcher lives in shared/ — the viewer Lambda enforces the Online Dashboard gate
+// with the SAME rule that picks a site's snippet origin here. Re-exported so existing
+// imports and tests keep working.
+export { isFirstPartyFor } from "../../shared/src/first-party";
+import { isFirstPartyFor } from "../../shared/src/first-party";
 
 /**
  * The Sites screen (DESIGN.md §7.1): add a site → get the one-line snippet with a copy

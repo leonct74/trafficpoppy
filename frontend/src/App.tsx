@@ -286,11 +286,14 @@ export function App() {
           </div>
           <div hidden={section !== "team"}>
             <Viewers
-              // Once the statistics page rides a True Reach domain, hand the team the
-              // memorable address instead of the raw AWS one (both keep working).
+              // The Online Dashboard gate: hand out a link only when the paid tier exists.
+              // Prefer the memorable address; the raw AWS URL only bridges an edge that
+              // hasn't taken the viewer-routing update yet. No edge ⇒ no link (the panel
+              // explains the upgrade instead).
               viewerUrl={(() => {
                 const pretty = edgeState.find((e) => e.viewerAtEdge && e.domain);
-                return pretty ? `https://${pretty.domain}/` : status?.viewerUrl;
+                if (pretty) return `https://${pretty.domain}/`;
+                return edgeState.some((e) => e.phase === "ready") ? status?.viewerUrl : undefined;
               })()}
               canManage={!!status?.viewerUserPoolId}
             />

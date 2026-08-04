@@ -55,6 +55,14 @@ describe("the team list", () => {
     expect(await screen.findByText(/Nobody has been invited yet/i)).toBeInTheDocument();
   });
 
+  it("with no Online Dashboard set up: no link, and the upgrade is explained (the paid gate)", async () => {
+    render(<Viewers canManage />);
+    expect(screen.queryByRole("link", { name: /open dashboard/i })).not.toBeInTheDocument();
+    expect(await screen.findByText(/part of the/i)).toBeInTheDocument();
+    expect(screen.getByText(/Online Dashboard/)).toBeInTheDocument();
+    expect(screen.getByText(/stay visible in this app only/i)).toBeInTheDocument();
+  });
+
   it("distinguishes a pending invite from an active account", async () => {
     mocked.listViewers.mockResolvedValue({
       viewers: [

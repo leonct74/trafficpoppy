@@ -9,11 +9,20 @@
 // 404 (not 403) so the dashboard cannot be used to enumerate which sites exist — the agency
 // case in §7b requires that client A cannot learn client B is a customer.
 //
+// THE ONLINE DASHBOARD GATE (founder decision 2026-08-04): browser access is part of the
+// paid tier — the free tier is desktop-only. A site is online-visible ONLY when its domain
+// is covered by a deployed Online Dashboard edge, and the ONLY way an edge comes to exist
+// is the app's entitlement-gated setup. Enforced HERE, server-side, from the edge records
+// in the owner's own table — never by client-side filtering (the MailPoppy lesson), and
+// never by calling the platform (no data, not even entitlement pings, leaves the owner's
+// AWS — the §7c privacy line).
+//
 // The execution role is READ-ONLY on the table (GetItem/Query only), so even a total
 // compromise of this function cannot alter or delete a single counter.
 
 import { DynamoDBClient, QueryCommand } from "@aws-sdk/client-dynamodb";
 import { bearerToken, mayReadSite, verifyJwt, visibleSites, type Jwk, type ViewerClaims } from "./auth";
+import { isFirstPartyFor } from "../../shared/src/first-party";
 import { lastDays, reduceLive, reduceRange, type CounterRow } from "../../shared/src/range";
 import { dashboardHtml } from "./viewer-page";
 
@@ -41,11 +50,20 @@ export interface ViewerDeps {
   listSites(): Promise<{ id: string; name: string; domain: string }[]>;
   dayRows(siteId: string, day: string): Promise<CounterRow[]>;
   recentRows(siteId: string): Promise<CounterRow[]>;
+  /**
+   * The Online Dashboard edge domains deployed in this account (from the truereach cert
+   * rows). The paid gate: a site is served online only if one of these covers its domain.
+   */
+  edgeDomains(): Promise<string[]>;
   /** Verified claims, or undefined when the token is absent/invalid. Never throws. */
   authenticate(headers: Record<string, string | undefined>): Promise<ViewerClaims | undefined>;
   today(): string;
   now(): Date;
 }
+
+/** The paid gate's predicate: is this site covered by any deployed edge domain? */
+const onlineEntitled = (site: { domain: string }, edgeDomains: string[]): boolean =>
+  edgeDomains.some((edge) => isFirstPartyFor(site.domain, edge));
 
 const json = (statusCode: number, body: unknown): HttpResponse => ({
   statusCode,
@@ -86,9 +104,17 @@ export async function route(req: HttpRequest, deps: ViewerDeps): Promise<HttpRes
   if (!claims) return json(401, { error: "sign in to continue" });
 
   if (req.method === "GET" && path === "/api/sites") {
-    const all = await deps.listSites();
-    // Ungranted sites are not merely hidden in the UI — they never leave the server.
-    return json(200, { sites: visibleSites(claims, all), viewer: { email: claims.email } });
+    const [all, edges] = await Promise.all([deps.listSites(), deps.edgeDomains()]);
+    // Two server-side filters, both here and never in the client: the viewer's grants
+    // (ungranted sites never leave the server) and the Online Dashboard gate (sites on
+    // unsubscribed domains are desktop-only). `gated` lets the page explain the empty
+    // state honestly instead of pretending nothing was shared.
+    const online = all.filter((s) => onlineEntitled(s, edges));
+    return json(200, {
+      sites: visibleSites(claims, online),
+      viewer: { email: claims.email },
+      gated: edges.length === 0 || undefined,
+    });
   }
 
   const m = /^\/api\/sites\/([^/]+)\/(range|live)$/.exec(path);
@@ -96,6 +122,10 @@ export async function route(req: HttpRequest, deps: ViewerDeps): Promise<HttpRes
     const siteId = decodeURIComponent(m[1]!);
     // 404 rather than 403: a 403 would confirm the site exists (§7b enumeration guard).
     if (!mayReadSite(claims, siteId)) return NOT_FOUND();
+    // The paid gate holds on direct reads too — knowing a site id must not bypass it.
+    const [all, edges] = await Promise.all([deps.listSites(), deps.edgeDomains()]);
+    const site = all.find((s) => s.id === siteId);
+    if (!site || !onlineEntitled(site, edges)) return NOT_FOUND();
 
     if (m[2] === "live") {
       return json(200, { live: reduceLive(siteId, await deps.recentRows(siteId), deps.now()) });
@@ -177,6 +207,22 @@ const liveDeps: ViewerDeps = {
   now: () => new Date(),
   dayRows: (siteId, day) => queryRows(`site#${siteId}#day#${day}`),
   recentRows: (siteId) => queryRows(`site#${siteId}#recent`),
+  // The deployed edge domains, straight from the sidecar's cert registry rows in this
+  // same table. Value format `domain|arn[|stackName]` — reading the FIRST part works for
+  // both the v1 single-domain row and v2 per-domain rows, so the gate is correct even
+  // before the sidecar's migration has run.
+  async edgeDomains() {
+    const out = await db.send(
+      new QueryCommand({
+        TableName: TABLE,
+        KeyConditionExpression: "pk = :p AND begins_with(sk, :s)",
+        ExpressionAttributeValues: { ":p": { S: "truereach" }, ":s": { S: "cert#" } },
+      }),
+    );
+    return (out.Items ?? [])
+      .map((it) => (it.value?.S ?? "").split("|")[0] ?? "")
+      .filter(Boolean);
+  },
   async listSites() {
     const out = await db.send(
       new QueryCommand({

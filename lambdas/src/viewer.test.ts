@@ -28,6 +28,8 @@ function deps(over: Partial<ViewerDeps> = {}): ViewerDeps {
     listSites: async () => SITES,
     dayRows: async () => ROWS,
     recentRows: async () => [{ sk: "t#2026-07-25T09:05", count: 2 }],
+    // Default: every test site's domain is covered — the paid gate is asserted separately.
+    edgeDomains: async () => SITES.map((s) => `stats.${s.domain}`),
     authenticate: async (h) => (h.authorization === "Bearer good" ? claimsFor([siteGroup("aaa")]) : undefined),
     today: () => "2026-07-25",
     now: () => new Date("2026-07-25T09:30:00Z"),
@@ -186,6 +188,35 @@ describe("reads", () => {
     const { live } = JSON.parse(res.body);
     expect(live.minutes).toHaveLength(30);
     expect(live.views).toBe(2);
+  });
+
+  it("enforces the Online Dashboard gate: sites on unsubscribed domains are desktop-only", async () => {
+    // Only a.com is covered by a deployed edge; b.com's owner never bought the tier.
+    const d = deps({
+      authenticate: async () => claimsFor([ALL_SITES_GROUP]),
+      edgeDomains: async () => ["stats.a.com"],
+    });
+    const list = JSON.parse((await route({ method: "GET", path: "/api/sites", query: {}, headers: AUTH }, d)).body);
+    expect(list.sites.map((s: { id: string }) => s.id)).toEqual(["aaa"]);
+    expect(list.gated).toBeUndefined(); // an edge exists — not the gated-empty state
+    // Knowing b's site id must not bypass the gate — and 404, never 403 (enumeration guard).
+    const direct = await route({ method: "GET", path: "/api/sites/bbb/range", query: {}, headers: AUTH }, d);
+    expect(direct.statusCode).toBe(404);
+  });
+
+  it("reports the gated state when NO edge exists, so the page can explain the upgrade", async () => {
+    const d = deps({
+      authenticate: async () => claimsFor([ALL_SITES_GROUP]),
+      edgeDomains: async () => [],
+    });
+    const list = JSON.parse((await route({ method: "GET", path: "/api/sites", query: {}, headers: AUTH }, d)).body);
+    expect(list.sites).toEqual([]);
+    expect(list.gated).toBe(true);
+    // Every data read is equally closed.
+    const r = await route({ method: "GET", path: "/api/sites/aaa/range", query: {}, headers: AUTH }, d);
+    expect(r.statusCode).toBe(404);
+    const l = await route({ method: "GET", path: "/api/sites/aaa/live", query: {}, headers: AUTH }, d);
+    expect(l.statusCode).toBe(404);
   });
 
   it("404s unknown routes without touching the database", async () => {

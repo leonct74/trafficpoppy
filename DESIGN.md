@@ -323,6 +323,19 @@ without AWS credentials**. Solution = the MailPoppy admin/member split, reapplie
 
 ## 7c. The external client — how a Verified poppy still monetises (founder decision 2026-07-25)
 
+> **AMENDED AGAIN (founder, 2026-08-04, later the same day): the browser dashboard is
+> PAID — the free tier is desktop-only.** With the tier renamed "Online Dashboard", the
+> founder chose to make the name literally true (and to match §7b's original instinct:
+> "webpage analytics with premium quality diagrams and controlled access is payware").
+> The gate is enforced **in the viewer Lambda, server-side, from the edge records in the
+> owner's own table**: a site is served online only when its domain is covered by a
+> deployed Online Dashboard edge — and an edge can only come to exist through the
+> entitlement-gated setup. Never client-side filtering (the MailPoppy lesson), and never
+> an entitlement call from the customer's Lambda to the platform (the privacy line below
+> holds: nothing leaves the owner's AWS). Direct reads with a known site id 404 the same
+> as listings; the page's empty state distinguishes "nothing shared with you" from "the
+> upgrade isn't set up". The "plain built-in dashboard = free tier" row below is VOID.
+
 > **AMENDED (founder, 2026-08-04): the built-in viewer IS the professional dashboard.**
 > "TrafficPoppy must become a serious, compliant alternative to Google Analytics" — a plain
 > free page failed that bar, so the viewer Lambda's page now carries the professional
@@ -887,3 +900,16 @@ materializes.
   ready list; Team access hands out the first `viewerAtEdge` address. Entitlement was
   already per-domain — nothing to change there. No manifest changes (stack names stay
   under `TrafficPoppy*`). 325 tests green.
+- 2026-08-04 — **Tier renamed ("True Reach" → "Online Dashboard", product id
+  `online-dashboard`) and the browser dashboard GATED behind it** (founder decisions; §7c
+  amendment block). Naming: "True Reach" didn't say what you buy; the founder's ranking of
+  benefits is (1) open + share the statistics page from any browser on your own address,
+  (2) ad blockers can't hide visitors, (3) countries — the pitch now leads in that order,
+  and a test pins the order. Gate: `viewer.ts` filters sites to domains covered by a
+  deployed edge (cert rows read from the owner's table; value's first `|`-part, so the
+  gate is correct pre- and post- the v1 row migration); `/api/sites` carries `gated` for
+  the honest empty state; the Team access panel hands out a link only when the tier
+  exists, and explains the upgrade otherwise. Also fixed in passing: the privacy-promise
+  copy still claimed a fixed 24-hour salt — now owner-controlled, 24 h default, 7-day max
+  (§6b). Internal identifiers (routes, component names, `TRUE_REACH` consts) keep the old
+  name deliberately. 328 tests green.
