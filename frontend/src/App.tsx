@@ -20,15 +20,18 @@ type Phase = "loading" | "gate" | "ready";
 /**
  * The ready screen's sections. Founder feedback (2026-08-04): with several sites
  * configured, extra cards ended up below the fold and were effectively invisible — tabs
- * make every section one visible click away (the "visible navigation" rule). Later the
- * same day: the paid surfaces (domain setup + team access) merged into ONE "Advanced
- * stats" tab — they are one product, so they live behind one name. The inactive panel
- * stays MOUNTED: the edge polling feeds the per-site snippet origins, and unmounting it
- * would freeze a DNS-validation flow the moment the user peeked at another tab.
+ * make every section one visible click away (the "visible navigation" rule). Team access
+ * is its OWN tab again (a brief merge into Advanced stats was reverted: granting people
+ * all-domain access inside the purchase surface muddled both) — it sits to the RIGHT of
+ * Advanced stats and stays LOCKED until a subscription exists; pressing it while locked
+ * explains why in a modal instead of silently doing nothing. Inactive panels stay
+ * MOUNTED: the edge polling feeds the per-site snippet origins, and unmounting it would
+ * freeze a DNS-validation flow the moment the user peeked at another tab.
  */
 const SECTIONS = [
   { key: "sites", label: "Your sites" },
   { key: "advanced", label: "Advanced stats" },
+  { key: "team", label: "Team access" },
 ] as const;
 type SectionKey = (typeof SECTIONS)[number]["key"];
 
@@ -46,6 +49,10 @@ export function App() {
   /** The True Reach edges (one per domain) — ready ones serve snippets first-party. */
   const [edgeState, setEdgeState] = useState<EdgeStatus[]>([]);
   const [section, setSection] = useState<SectionKey>("sites");
+  /** The "Team access needs Advanced Stats" modal (shown when the locked tab is pressed). */
+  const [showTeamLocked, setShowTeamLocked] = useState(false);
+  /** Advanced Stats is live on at least one domain — unlocks the Team access tab. */
+  const onlineActive = edgeState.some((e) => e.phase === "ready");
   const pollRef = useRef<number | null>(null);
 
   /**
@@ -257,18 +264,68 @@ export function App() {
             )}
           </div>
           <div className="tabs" role="tablist" aria-label="TrafficPoppy sections" style={{ marginBottom: 14 }}>
-            {SECTIONS.map((s) => (
-              <button
-                key={s.key}
-                role="tab"
-                aria-selected={section === s.key}
-                className={`tab${section === s.key ? " active" : ""}`}
-                onClick={() => setSection(s.key)}
-              >
-                {s.label}
-              </button>
-            ))}
+            {SECTIONS.map((s) => {
+              // Team access is locked until Advanced Stats is active — but the tab stays
+              // pressable so the lock can EXPLAIN itself (a dead control reads as broken).
+              const locked = s.key === "team" && !onlineActive;
+              return (
+                <button
+                  key={s.key}
+                  role="tab"
+                  aria-selected={section === s.key}
+                  aria-disabled={locked || undefined}
+                  className={`tab${section === s.key ? " active" : ""}`}
+                  style={locked ? { opacity: 0.45 } : undefined}
+                  title={locked ? "Requires Advanced Stats" : undefined}
+                  onClick={() => (locked ? setShowTeamLocked(true) : setSection(s.key))}
+                >
+                  {s.label}
+                  {locked ? " 🔒" : ""}
+                </button>
+              );
+            })}
           </div>
+
+          {showTeamLocked && (
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-label="Team access requires Advanced Stats"
+              style={{
+                position: "fixed",
+                inset: 0,
+                background: "rgba(0,0,0,0.55)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                zIndex: 40,
+              }}
+              onClick={() => setShowTeamLocked(false)}
+            >
+              <div className="card stack" style={{ maxWidth: 400, margin: 16 }} onClick={(e) => e.stopPropagation()}>
+                <strong>To set up a team, Advanced Stats must be activated.</strong>
+                <p className="muted" style={{ margin: 0 }}>
+                  Team access lets people open your statistics from any browser — and that page is part of
+                  the Advanced Stats upgrade. Set up a domain in the Advanced stats tab first, then invite
+                  your team here.
+                </p>
+                <div className="row">
+                  <button
+                    className="btn btn-primary"
+                    onClick={() => {
+                      setShowTeamLocked(false);
+                      setSection("advanced");
+                    }}
+                  >
+                    Open Advanced stats
+                  </button>
+                  <button className="btn" onClick={() => setShowTeamLocked(false)}>
+                    Close
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
           <div hidden={section !== "sites"}>
             {status?.collectorUrl && (
               <Sites
@@ -284,10 +341,10 @@ export function App() {
               />
             )}
           </div>
-          {/* One paid product, one tab: domain setup first (it unlocks everything below),
-              then who can open the resulting page. */}
           <div hidden={section !== "advanced"}>
             <TrueReach onStatus={setEdgeState} />
+          </div>
+          <div hidden={section !== "team"}>
             <Viewers
               // The Advanced Stats gate: hand out a link only when the paid tier exists.
               // Prefer the memorable address; the raw AWS URL only bridges an edge that
@@ -296,10 +353,10 @@ export function App() {
               viewerUrl={(() => {
                 const pretty = edgeState.find((e) => e.viewerAtEdge && e.domain);
                 if (pretty) return `https://${pretty.domain}/`;
-                return edgeState.some((e) => e.phase === "ready") ? status?.viewerUrl : undefined;
+                return onlineActive ? status?.viewerUrl : undefined;
               })()}
               canManage={!!status?.viewerUserPoolId}
-              onlineActive={edgeState.some((e) => e.phase === "ready")}
+              onlineActive={onlineActive}
             />
           </div>
         </>

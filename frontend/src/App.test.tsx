@@ -110,20 +110,15 @@ describe("the section tabs", () => {
     await screen.findByText(/TrafficPoppy is set up/i);
   };
 
-  it("shows the two sections as tabs, with sites first (paid surfaces share one tab)", async () => {
+  it("shows three tabs — sites first, Team access to the RIGHT of Advanced stats", async () => {
     await openApp();
     const tabs = screen.getAllByRole("tab");
-    expect(tabs.map((t) => t.textContent)).toEqual(["Your sites", "Advanced stats"]);
+    expect(tabs.map((t) => t.textContent?.replace(" 🔒", ""))).toEqual([
+      "Your sites",
+      "Advanced stats",
+      "Team access",
+    ]);
     expect(tabs[0]).toHaveAttribute("aria-selected", "true");
-  });
-
-  it("hides the Advanced stats surfaces until their tab is picked", async () => {
-    await openApp();
-    // hidden: true reaches into the hidden panel — visible queries must NOT find it.
-    expect(screen.queryByRole("heading", { name: /Team access/i })).not.toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: /Team access/i, hidden: true })).not.toBeVisible();
-    await userEvent.setup().click(screen.getByRole("tab", { name: /Advanced stats/i }));
-    expect(screen.getByRole("heading", { name: /Team access/i })).toBeVisible();
   });
 
   it("keeps inactive panels MOUNTED so True Reach polling survives tab switches", async () => {
@@ -131,5 +126,53 @@ describe("the section tabs", () => {
     // Never unmounted: the edge status was fetched even though the tab wasn't opened.
     await waitFor(() => expect(mocked.edgeStatus).toHaveBeenCalled());
     expect(screen.getByRole("heading", { name: /Team access/i, hidden: true })).toBeInTheDocument();
+  });
+});
+
+/**
+ * Founder decision 2026-08-04 (reverting a brief merge): Team access is its own tab, but
+ * LOCKED until Advanced Stats is active — inviting people to a dashboard they can't open
+ * activates a service they cannot use. The locked tab still responds to a press: it
+ * explains itself in a modal (a dead control reads as broken — founder UX rule).
+ */
+describe("the Team access lock", () => {
+  const openApp = async () => {
+    mocked.status.mockResolvedValue(ready());
+    render(<App />);
+    await screen.findByText(/TrafficPoppy is set up/i);
+  };
+
+  it("locked without a subscription: pressing the tab explains instead of switching", async () => {
+    await openApp(); // edgeStatus default: no edges
+    const teamTab = screen.getByRole("tab", { name: /Team access/i });
+    expect(teamTab).toHaveAttribute("aria-disabled", "true");
+
+    await userEvent.setup().click(teamTab);
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
+    expect(screen.getByText(/To set up a team, Advanced Stats must be activated/i)).toBeInTheDocument();
+    // Still on the sites tab — the press explained, it didn't navigate.
+    expect(screen.getByRole("tab", { name: /Your sites/i })).toHaveAttribute("aria-selected", "true");
+  });
+
+  it("the modal's primary action leads to Advanced stats (never a dead end)", async () => {
+    await openApp();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("tab", { name: /Team access/i }));
+    await user.click(await screen.findByRole("button", { name: /open advanced stats/i }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /Advanced stats/i })).toHaveAttribute("aria-selected", "true");
+  });
+
+  it("unlocked once a domain is live: the tab opens Team access normally", async () => {
+    mocked.edgeStatus.mockResolvedValue({
+      edges: [{ phase: "ready", domain: "stats.ollydigital.com", records: [], inProgress: false }],
+    });
+    await openApp();
+    const teamTab = await screen.findByRole("tab", { name: /^Team access$/i });
+    await waitFor(() => expect(teamTab).not.toHaveAttribute("aria-disabled"));
+
+    await userEvent.setup().click(teamTab);
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /Team access/i })).toBeVisible();
   });
 });

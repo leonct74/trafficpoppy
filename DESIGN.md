@@ -925,3 +925,12 @@ materializes.
   surfaces (domain setup + team access) merged into ONE **"Advanced stats" tab** — one
   product behind one name; tabs are now Your sites / Advanced stats. The viewer page's
   gated empty state says the same name. 332 tests green.
+- 2026-08-04 — **Tab merge REVERTED (founder: "I lead you to the wrong direction").**
+  Granting people all-domain access inside the purchase surface muddled both jobs. Final
+  shape: **three tabs — Your sites / Advanced stats / Team access** (team on the right),
+  with the Team access tab **locked (🔒, aria-disabled, dimmed) until Advanced Stats is
+  live on ≥1 domain**. The locked tab stays pressable: it opens a modal — "To set up a
+  team, Advanced Stats must be activated" — whose primary action jumps to the Advanced
+  stats tab (founder UX rule: a dead control reads as broken; a lock must explain
+  itself). All prior gating stands (viewer Lambda server-side, invite flow, removable
+  lapsed viewers). 337 tests green.
