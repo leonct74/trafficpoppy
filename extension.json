@@ -140,7 +140,6 @@
           "DeleteUserPool",
           "UpdateUserPool",
           "DescribeUserPool",
-          "CreateUserPoolClient",
           "DeleteUserPoolClient",
           "DescribeUserPoolClient",
           "GetUserPoolMfaConfig",
@@ -150,13 +149,20 @@
           "AdminAddUserToGroup",
           "AdminRemoveUserFromGroup",
           "AdminListGroupsForUser",
-          "CreateGroup",
           "DeleteGroup",
           "ListUsers",
           "TagResource",
           "ListTagsForResource"
         ],
         "resourceScope": "tagged-as-self"
+      },
+      {
+        "service": "cognito-idp",
+        "actions": [
+          "CreateUserPoolClient",
+          "CreateGroup"
+        ],
+        "resourceScope": "arn:aws:cognito-idp:*:*:userpool/*"
       }
     ],
     "limits": null

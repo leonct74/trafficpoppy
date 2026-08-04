@@ -737,3 +737,27 @@ materializes.
   Also re-vendored the design kit's `.poppy-helper-pulse` into `frontend/src/poppy.css`.
   Frontend-only, no AWS surface touched; 9 new tests (`helper-prompt.test.ts`), suite green
   (187 across the four workspaces).
+- 2026-08-04 — **Update banner shipped (a P1-era gap found live).** The backend has reported
+  `updateAvailable` since P1, but nothing ever rendered it outside the technical-details
+  panel — so a deployment missing new features looked broken rather than merely out of date
+  (found when the founder asked "I don't see the update?"). `App.tsx` now shows a banner +
+  "Update now" button through the normal deploy path; 4 regression tests in `App.test.tsx`.
+- 2026-08-04 — **P6a first live vend: Cognito sub-resource creates CANNOT be birth-tagged —
+  cognito grant split.** The stack update created the tagged user pool fine, then IAM denied
+  `cognito-idp:CreateUserPoolClient` and CloudFormation rolled back cleanly. Cause: the
+  broker's `tagged-as-self` compiler puts every `Create*` action behind an
+  `aws:RequestTag/agentspoppy:app` condition (the birth-tag rule), but `CreateUserPoolClient`
+  and `CreateGroup` create **sub-resources of a pool and their APIs take no tags**, so the
+  condition can never match — exactly the corollary documented in the broker's `policy.ts`.
+  Fix (manifest-only, mechanism untouched): those two actions moved to a second cognito grant
+  scoped `arn:aws:cognito-idp:*:*:userpool/*` — the tightest AWS allows, since pool ids are
+  random (no `TrafficPoppy*` name-scoping possible) and Cognito can't tag-gate them. Honest
+  caveat: within a vended session those two calls would work against ANY user pool in the
+  owner's account; every *other* cognito action (delete/update/admin/user ops) stays pinned
+  to tagged-as-self pools, which bounds the blast radius to "could add a client/group to a
+  foreign pool", not read or change one. Assessor: still **medium**. Budget: 13 → 14
+  statements, 3927 → 4021 plaintext chars (+2.4% vs the 2026-07-31 measurement) — noise.
+  Rule of thumb for future grants: any `Create*` whose API cannot carry tags at creation
+  needs an ARN-scoped grant, not tagged-as-self (Lambda's `CreateFunctionUrlConfig` only
+  works today because the lambda grant is name-scoped). Scope change supersedes the
+  connection — the founder must re-approve TrafficPoppy's permissions before the retry.
