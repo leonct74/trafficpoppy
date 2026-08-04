@@ -43,6 +43,24 @@ describe("the helper prompt", () => {
     expect(p).toContain("full collection, just desktop-only viewing");
   });
 
+  it("describes the app's real layout and the Team access mechanics (post-lock)", () => {
+    const p = buildHelperPrompt({ collectorUrl: URL });
+    expect(p).toContain('"Your sites", "Advanced stats", "Team access"');
+    expect(p).toContain('unlocks the "Team access" tab');
+    expect(p).toContain("grant all sites or only specific ones");
+    // The gate is stated as a fact the outside AI can repeat honestly.
+    expect(p).toContain("Sites without the upgrade never appear in the browser");
+    // And the flow chart's colour language matches the founder's spec.
+    expect(p).toContain("green ribbons where visits come in, red where they move on or leave");
+  });
+
+  it("lists what the dashboards show so item 5 answers with real report names", () => {
+    const p = buildHelperPrompt({ collectorUrl: URL });
+    expect(p).toContain("live last-30-minutes ticker");
+    expect(p).toContain("custom dates");
+    expect(p).toContain("exports to CSV");
+  });
+
   it("knows returning visitors exist within the owner's 1–7 day window (§6b)", () => {
     const p = buildHelperPrompt({ collectorUrl: URL });
     expect(p).toContain("new-vs-returning visitors");

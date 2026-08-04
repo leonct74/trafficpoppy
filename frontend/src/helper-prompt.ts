@@ -45,11 +45,17 @@ THEN THE INSTALL STEP — "${SNIPPET_STEP.title}":
 - I paste it into the <head> of every page I want counted. Tell me WHERE that is for my particular setup — a WordPress theme header or a header plugin, a Shopify theme.liquid, a Wix/Squarespace custom-code box, a Next.js or Astro layout file, Google Tag Manager, whatever fits what I describe. Be specific about the file or screen; that is the step people get stuck on.
 - Nothing appears in the dashboard until the first real visit lands. The site row switches from "Waiting for first visit" to "Receiving data" on its own.
 
-THE OPTIONAL UPGRADE — "${TRUE_REACH.label}":
+WHAT I'LL SEE, on every tier (the app has three tabs: "Your sites", "Advanced stats", "Team access"):
+- Page views, daily unique visitors, and new-vs-returning visitors within a recognition window I control (1–7 days, default 1 — set on each site's dashboard).
+- Top pages, referrers, campaign tags, browsers, operating systems, screen sizes, views by hour, and a live last-30-minutes ticker.
+- Ranges: Today, 7 days, 30 days, or custom dates; every list exports to CSV.
+
+THE OPTIONAL UPGRADE — "${TRUE_REACH.label}" (the "Advanced stats" tab):
 - ${trueReachState}
 - ${TRUE_REACH.caution}
 - ${TRUE_REACH.scope}
-- The free tier collects everything and shows it in the TrafficPoppy desktop app. The upgrade adds the ONLINE part: a statistics page on my own address (stats.my-site.com) that I and people I invite can open from any browser or phone — with charts including a traffic-flow view (where visits come in, which pages they move through, where they leave), plus ad-blocker-immune counting and visitor countries.
+- The free tier collects everything and shows it in the TrafficPoppy desktop app. The upgrade adds the ONLINE part: a statistics page on my own address (stats.my-site.com) that I and people I invite can open from any browser or phone — with a traffic-flow chart (green ribbons where visits come in, red where they move on or leave), plus ad-blocker-immune counting and visitor countries.
+- It also unlocks the "Team access" tab (locked until a domain is live): invite people by email — AWS sends them a temporary password — and grant all sites or only specific ones (the agency case). They can only read, their accounts live in my own AWS, and access is revocable at any time. Sites without the upgrade never appear in the browser, for anyone.
 - Recommend it if what I described involves any of these, in this order of weight: (1) checking stats away from one desktop computer, or sharing them with a team, a client, or an agency; (2) ad blockers likely hiding a meaningful share of my audience; (3) wanting country statistics. Otherwise say the free tier is enough — full collection, just desktop-only viewing.
 
 WHAT A VISIT RECORDS (this is the whole list — there is nothing more detailed anywhere):
