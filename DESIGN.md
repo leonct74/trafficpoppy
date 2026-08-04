@@ -761,3 +761,14 @@ materializes.
   needs an ARN-scoped grant, not tagged-as-self (Lambda's `CreateFunctionUrlConfig` only
   works today because the lambda grant is name-scoped). Scope change supersedes the
   connection — the founder must re-approve TrafficPoppy's permissions before the retry.
+- 2026-08-04 — **P6a LIVE-VERIFIED: the viewer plane is up in the founder's AWS.** After the
+  grant split + connection re-approval, the stack update completed on the first retry:
+  Cognito pool + viewer Lambda + Function URL created, templates in lockstep
+  (`template-15208481a038a030`), update banner cleared itself. Live checks: `GET /` serves
+  the dashboard with the full header set (`text/html`, `x-frame-options: DENY`, `nosniff`,
+  `no-referrer`, `no-store`); `GET /api/sites` without a token → 401. The corner is now
+  documented platform-wide (agentspoppy `AGENTS.md` §3 sub-resource block + §10 checklist
+  line, commit 441ba14). Nit found while smoke-testing: `HEAD /` returns the JSON 404 (the
+  router only matches `GET`) — harmless for browsers, not worth a statement. Next: invite
+  the first viewer through Team access and complete the temp-password → dashboard flow
+  end-to-end on a phone.
