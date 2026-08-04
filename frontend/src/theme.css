@@ -106,39 +106,3 @@ textarea.input { font-family: var(--poppy-font-mono); font-size: 13px; min-heigh
 /* Loading placeholders that sketch the layout (P3 look & feel). */
 .skeleton { background: var(--poppy-surface-2); animation: skeleton-pulse 1.2s ease-in-out infinite; }
 @keyframes skeleton-pulse { 0%, 100% { opacity: 0.55; } 50% { opacity: 1; } }
-
-/* ── Chat (the run view) ──────────────────────────────────────────────────
-   The founder's note, 2026-07-27: "the human has to learn a whole new chat
-   visual pattern, so it isn't really friendly." A run IS a conversation, so it
-   should look like every other conversation the user has ever had — their words
-   on the right, the agent's on the left, the machinery small and out of the way.
-
-   The log is a BOUNDED, scrollable box on purpose. Several agents live on one
-   page, and an unbounded transcript pushes the next agent's card off screen —
-   which is what made it hard to tell whose trail you were reading. */
-.chat { border: 1px solid var(--poppy-border); border-radius: var(--poppy-radius); background: var(--poppy-surface-0); overflow: hidden; }
-.chat-log { max-height: 340px; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
-.chat-empty { color: var(--poppy-muted-2); font-size: 13px; text-align: center; padding: 18px 8px; }
-
-.msg { max-width: 82%; display: flex; flex-direction: column; gap: 3px; }
-.msg-who { font-size: 11px; color: var(--poppy-muted-2); padding: 0 4px; }
-.msg-body { padding: 8px 12px; border-radius: 14px; white-space: pre-wrap; overflow-wrap: anywhere; }
-
-/* Theirs: left, surface — the neutral side. */
-.msg.agent { align-self: flex-start; }
-.msg.agent .msg-body { background: var(--poppy-surface-2); border: 1px solid var(--poppy-border); border-bottom-left-radius: 5px; }
-
-/* Yours: right, accent — the one place the poppy's own colour carries meaning. */
-.msg.you { align-self: flex-end; align-items: flex-end; }
-.msg.you .msg-body { background: var(--poppy-accent); color: var(--poppy-on-accent); border-bottom-right-radius: 5px; }
-
-/* What the agent DID, not what it said. Centred, quiet, never a bubble — it is
-   the audit trail (DESIGN §9), so it stays visible, but it isn't speech. */
-.msg.step { max-width: 100%; align-self: center; align-items: center; }
-.msg.step .msg-body {
-  background: transparent; color: var(--poppy-muted-2); font-family: var(--poppy-font-mono);
-  font-size: 12px; padding: 2px 8px; text-align: center;
-}
-
-.chat-composer { display: flex; gap: 8px; align-items: flex-end; padding: 10px; border-top: 1px solid var(--poppy-border); background: var(--poppy-surface-1); }
-.chat-composer textarea.input { min-height: 40px; max-height: 140px; font-family: var(--poppy-font); font-size: 14px; }
