@@ -44,9 +44,13 @@ export function trackerScript(collectorOrigin: string): string {
   function send(){
     var path=w.location.pathname;
     if(path===last)return; // de-dupe repeat fires for the same path (SPA re-renders)
+    var prev=last; // entry vs internal step: same-site referrer becomes v, never r
     last=path;
     var u=utm();
-    var body={s:site,p:path,r:d.referrer||"",w:w.innerWidth||0};
+    var body={s:site,p:path,w:w.innerWidth||0};
+    var r=d.referrer||"";
+    if(!prev&&r){try{var ru=new URL(r);if(ru.host===w.location.host){prev=ru.pathname;r="";}}catch(e){}}
+    if(prev){body.v=prev;}else{body.r=r;}
     if(u.utm_source)body.q=w.location.search;
     var json=JSON.stringify(body);
     // Plain-string body only — a typed body forces a CORS preflight that kills the hit.

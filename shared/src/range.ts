@@ -45,6 +45,20 @@ export interface RangeStats {
   countries: { key: string; count: number }[];
   /** Views per UTC hour-of-day, 24 buckets (index = hour). */
   hours: number[];
+  /**
+   * Of the range's daily uniques: first-seen-in-window vs seen-earlier-in-window (§6b).
+   * Both zero (with uniques > 0) means the data predates the feature. On a 1-day window
+   * returning is 0 by construction — the UI says why instead of showing a hollow zero.
+   */
+  newVisitors: number;
+  returningVisitors: number;
+  /**
+   * Traffic flow (§7d), aggregate counts only. entries: source → landing path, where
+   * source is a referrer hostname or "direct". edges: same-site path → path transitions.
+   * Exits are DERIVED by the renderer (arrivals into a page minus departures from it).
+   */
+  entries: { source: string; path: string; count: number }[];
+  edges: { from: string; to: string; count: number }[];
   /** The immediately-preceding window of the same length — for Δ% and top movers. */
   prev?: {
     views: number;
@@ -72,6 +86,28 @@ function rank(sums: Map<string, number>, prefix: string, limit?: number): { key:
     .map(([sk, count]) => ({ key: sk.slice(prefix.length), count }))
     .sort((a, b) => b.count - a.count || a.key.localeCompare(b.key));
   return limit === undefined ? out : out.slice(0, limit);
+}
+
+/**
+ * Split a two-part flow key (`<a>#<b>`) at its FIRST '#'. Unambiguous: a referrer hostname
+ * cannot contain '#', and normalizePath strips '?'/'#' from paths — so the one '#' present
+ * is always the separator the collector wrote. Deterministically ranked and capped so a
+ * large site can't balloon the payload.
+ */
+function rankPairs(
+  sums: Map<string, number>,
+  prefix: string,
+  limit: number,
+): { a: string; b: string; count: number }[] {
+  return [...sums.entries()]
+    .filter(([sk]) => sk.startsWith(prefix))
+    .map(([sk, count]) => {
+      const rest = sk.slice(prefix.length);
+      const cut = rest.indexOf("#");
+      return { a: cut < 0 ? rest : rest.slice(0, cut), b: cut < 0 ? "" : rest.slice(cut + 1), count };
+    })
+    .sort((x, y) => y.count - x.count || x.a.localeCompare(y.a) || x.b.localeCompare(y.b))
+    .slice(0, limit);
 }
 
 /** The previous window's totals + breakdowns — what Δ% chips and top movers compare against. */
@@ -120,6 +156,10 @@ export function reduceRange(
     utmMediums: rank(sums, "utm_medium#", 10),
     countries: rank(sums, "country#", 12),
     hours: Array.from({ length: 24 }, (_, h) => sums.get(`hour#${String(h).padStart(2, "0")}`) ?? 0),
+    newVisitors: sums.get("total#new") ?? 0,
+    returningVisitors: sums.get("total#returning") ?? 0,
+    entries: rankPairs(sums, "entry#", 30).map(({ a, b, count }) => ({ source: a, path: b, count })),
+    edges: rankPairs(sums, "edge#", 60).map(({ a, b, count }) => ({ from: a, to: b, count })),
     prev: perPrevDay.length > 0 ? reducePrevWindow(perPrevDay) : undefined,
     receiving: sums.size > 0,
   };

@@ -116,12 +116,25 @@ function store(): Store {
 
 const DEFAULT_DAILY_CAP = 100_000;
 
+// The owner's per-site salt window (§6b), cached briefly so the hot path doesn't pay a
+// registry read per beacon. 60s staleness on a 1–7 DAY setting is invisible.
+const SALT_DAYS_TTL_MS = 60_000;
+const saltDaysCache = new Map<string, { value: number | undefined; freshUntil: number }>();
+async function cachedSaltDays(siteId: string): Promise<number | undefined> {
+  const hit = saltDaysCache.get(siteId);
+  if (hit && hit.freshUntil > Date.now()) return hit.value;
+  const value = await store().getSiteSaltDays(siteId);
+  saltDaysCache.set(siteId, { value, freshUntil: Date.now() + SALT_DAYS_TTL_MS });
+  return value;
+}
+
 export async function handler(event: FunctionUrlEvent): Promise<LambdaResponse> {
   const deps: HandlerDeps = {
     store: store(),
     now: () => new Date(),
     freshSalt: () => randomBytes(16).toString("hex"),
     dailyCap: Number(process.env.DAILY_CAP ?? DEFAULT_DAILY_CAP) || DEFAULT_DAILY_CAP,
+    getSaltDays: cachedSaltDays,
   };
   return handleEvent(event, deps);
 }

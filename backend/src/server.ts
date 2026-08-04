@@ -183,6 +183,13 @@ const server = createServer(async (req, res) => {
         if (method === "GET" && parts[2] === "live") {
           return json(res, 200, { live: await sites.live(id, new Date()) });
         }
+        // §6b baseline: the owner's salt window (1–7 days). Clamped here AND in the
+        // collector, so no stored value can ever exceed the consent-free ceiling.
+        if (method === "PUT" && parts[2] === "settings") {
+          const body = (await readBody(req)) as { saltDays?: unknown } | undefined;
+          const saltDays = await sites.setSaltDays(id, body?.saltDays);
+          return json(res, 200, { saltDays });
+        }
         if (method === "DELETE" && parts.length === 2) {
           await sites.remove(id);
           return json(res, 200, { ok: true });

@@ -1,14 +1,14 @@
 // The browser dashboard's HTML, served by the viewer Lambda (DESIGN.md §7b).
 //
-// ⚠ THIS IS THE FREE TIER, AND IT SHOULD STAY PLAIN (DESIGN.md §7c). The polished premium
-// reports deliberately do NOT live here: anything served from this Lambda is deployed into
-// the customer's own AWS account, where its code can be read straight back out. Premium
-// rendering ships in the externally hosted client instead, consuming the same /api/* surface.
-// So: keep this page honest and functional, and resist porting the fancy charts into it.
+// This IS the product's face (founder decision 2026-08-04, amending §7c): TrafficPoppy is
+// a serious, compliant alternative to Google Analytics, so the online dashboard carries
+// professional charts — trend, traffic flow, countries with flags — not a plain list.
+// Monetisation stays with True Reach (per-domain), not with chart quality.
 //
-// Dependency-free on purpose: this page is embedded in a Lambda that shares a zip with the
+// Dependency-free ON PURPOSE: this page is embedded in a Lambda that shares a zip with the
 // hot collector path, and a viewer's first paint should not wait on a framework download.
-// It talks to Cognito directly for login and to /api/* for data.
+// Every chart below is hand-rolled SVG. It talks to Cognito directly for login and to
+// /api/* for data.
 //
 // It renders NO data before authentication — the markup below contains only a login form;
 // every number arrives from an authenticated fetch afterwards.
@@ -32,30 +32,35 @@ export function dashboardHtml(cfg: PageConfig): string {
 <meta name="robots" content="noindex, nofollow">
 <title>Analytics</title>
 <style>
-:root{--bg:#0d1117;--card:#161b22;--line:#272e38;--fg:#e6edf3;--mut:#8b949e;--acc:#e0645a;--ok:#3fb950}
+:root{--bg:#0d1117;--card:#161b22;--line:#272e38;--fg:#e6edf3;--mut:#8b949e;--acc:#e0645a;--acc2:#58a6ff;--ok:#3fb950}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
-.wrap{max-width:1000px;margin:0 auto;padding:24px 16px}
+.wrap{max-width:1060px;margin:0 auto;padding:24px 16px}
 .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:20px;margin-bottom:16px}
-h1{font-size:20px;margin:0 0 4px}h2{font-size:15px;margin:0 0 12px}
+h1{font-size:20px;margin:0 0 4px}h2{font-size:13px;margin:0 0 12px;color:var(--mut);text-transform:uppercase;letter-spacing:.06em}
 .mut{color:var(--mut);font-size:13px}
 input{width:100%;padding:10px 12px;border-radius:8px;border:1px solid var(--line);background:#0b0f14;color:var(--fg);font-size:15px;margin-top:6px}
-button{background:var(--acc);color:#fff;border:0;border-radius:8px;padding:10px 16px;font-size:15px;font-weight:600;cursor:pointer}
-button:disabled{opacity:.6;cursor:default}
-button.ghost{background:transparent;color:var(--fg);border:1px solid var(--line)}
-.err{background:#3d1a1a;border:1px solid #6b2b2b;color:#ffb4ab;padding:10px 12px;border-radius:8px;margin:12px 0;font-size:14px}
-.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+button{background:var(--acc);border:none;color:#fff;padding:10px 14px;border-radius:8px;font-size:14px;cursor:pointer}
+button.ghost{background:transparent;border:1px solid var(--line);color:var(--fg)}
+.tab{padding:6px 12px;font-size:13px}.tab.on{background:var(--acc)}.tab:not(.on){background:transparent;border:1px solid var(--line);color:var(--fg)}
+.err{background:#2d1517;border:1px solid #6e2c31;color:#ffa198;border-radius:8px;padding:10px 12px;margin:10px 0;font-size:13px}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .spread{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
-.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px}
-.kpi{font-size:30px;font-weight:650;letter-spacing:-.5px}
-.bar{height:8px;background:var(--acc);border-radius:4px;min-width:2px}
-.brow{display:grid;grid-template-columns:1fr 120px 52px;gap:10px;align-items:center;padding:5px 0;font-size:14px}
-.brow span:last-child{text-align:right;color:var(--mut)}
-.tab{background:transparent;border:1px solid var(--line);color:var(--mut);padding:6px 12px;font-size:13px}
-.tab.on{color:var(--fg);border-color:var(--acc)}
-.site{display:flex;justify-content:space-between;align-items:center;padding:12px 0;border-bottom:1px solid var(--line);cursor:pointer}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px}
+.grid2 .card{margin-bottom:0}
+.kpi{font-size:26px;font-weight:650;line-height:1.2;font-variant-numeric:tabular-nums}
+.kd{font-size:11px}
+.brow{display:grid;grid-template-columns:minmax(0,1.3fr) 2fr auto;gap:10px;align-items:center;padding:5px 0;font-size:13px}
+.brow>span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.brow>span:last-child{font-variant-numeric:tabular-nums;color:var(--mut)}
+.bar{background:var(--acc);opacity:.75;height:8px;border-radius:4px}
+.site{display:flex;justify-content:space-between;align-items:center;padding:14px 4px;border-bottom:1px solid var(--line);cursor:pointer}
+.site:hover{background:#1b222c}
 .site:last-child{border-bottom:0}
 .hide{display:none}
+svg text{fill:var(--mut);font-size:10px}
+.flag{margin-right:6px}
 </style>
 </head>
 <body>
@@ -96,13 +101,21 @@ function show(el,on){el.classList[on?"remove":"add"]("hide")}
 function esc(s){var d=document.createElement("div");d.textContent=s==null?"":String(s);return d.innerHTML}
 function nfmt(n){return (n||0).toLocaleString()}
 
+// Country code → emoji flag + English name. Pure presentation, derived from the
+// two-letter code we already store — nothing extra is collected.
+function flag(cc){
+  if(!/^[A-Z]{2}$/.test(cc))return "";
+  return String.fromCodePoint(0x1F1E6+cc.charCodeAt(0)-65,0x1F1E6+cc.charCodeAt(1)-65);
+}
+var NAMES;try{NAMES=new Intl.DisplayNames(["en"],{type:"region"})}catch(e){NAMES=null}
+function cname(cc){try{return (NAMES&&NAMES.of(cc))||cc}catch(e){return cc}}
+
 var RULES=${js(passwordRules())};
 function cognito(target,body){
   return fetch(COG,{method:"POST",headers:{"content-type":"application/x-amz-json-1.1","x-amz-target":"AWSCognitoIdentityProviderService."+target},body:JSON.stringify(body)})
     .then(function(r){return r.json().then(function(j){
       if(!r.ok){
-        // Cognito's raw policy error ("Password did not conform with policy: …") never
-        // states the actual rule — replace it with the one sentence that does.
+        // Cognito's raw policy error never states the actual rule — say the one that does.
         var t=j.__type||"";
         if(t.indexOf("InvalidPasswordException")>=0)throw new Error("That password doesn't meet the requirements. "+RULES);
         throw new Error(j.message||"Sign-in failed");
@@ -186,27 +199,161 @@ function loadDetail(){
     .catch(function(e){$("detail").innerHTML='<div class="err">'+esc(e.message)+"</div>"});
 }
 
-function bars(title,rows,empty){
+// ── charts (hand-rolled SVG — no libraries, nothing loaded from anywhere) ──────────
+
+// Daily trend: views area + uniques line. Hour bars when the range is a single day.
+function trendSvg(r){
+  var W=920,H=200,P=28;
+  if(days===1){
+    var hours=r.hours||[],hm=Math.max.apply(null,hours.concat([1]));
+    var bw=(W-2*P)/24;
+    var bars="";
+    for(var i=0;i<24;i++){
+      var h=Math.round((hours[i]||0)/hm*(H-2*P));
+      bars+='<rect x="'+(P+i*bw+1)+'" y="'+(H-P-h)+'" width="'+(bw-2)+'" height="'+h+'" rx="2" fill="var(--acc)" opacity="0.8"><title>'+i+':00 — '+nfmt(hours[i]||0)+' views</title></rect>';
+      if(i%4===0)bars+='<text x="'+(P+i*bw+bw/2)+'" y="'+(H-8)+'" text-anchor="middle">'+i+':00</text>';
+    }
+    return '<svg viewBox="0 0 '+W+" "+H+'" style="width:100%;height:auto">'+bars+"</svg>";
+  }
+  var ds=r.days||[];if(!ds.length)return "";
+  var max=1;for(var j=0;j<ds.length;j++)max=Math.max(max,ds[j].views);
+  function x(i){return P+i*(W-2*P)/Math.max(1,ds.length-1)}
+  function y(v){return H-P-(v/max)*(H-2*P)}
+  var vPts="",uPts="",dots="";
+  for(var k=0;k<ds.length;k++){
+    vPts+=(k?" ":"")+x(k)+","+y(ds[k].views);
+    uPts+=(k?" ":"")+x(k)+","+y(ds[k].uniques);
+    dots+='<circle cx="'+x(k)+'" cy="'+y(ds[k].views)+'" r="7" fill="transparent"><title>'+ds[k].day+" — "+nfmt(ds[k].views)+" views, "+nfmt(ds[k].uniques)+" visitors</title></circle>";
+  }
+  var area='<polygon points="'+x(0)+","+(H-P)+" "+vPts+" "+x(ds.length-1)+","+(H-P)+'" fill="var(--acc)" opacity="0.15"/>';
+  var lbl='<text x="'+P+'" y="'+(H-8)+'">'+ds[0].day+'</text><text x="'+(W-P)+'" y="'+(H-8)+'" text-anchor="end">'+ds[ds.length-1].day+"</text>"
+    +'<text x="'+(W-P)+'" y="14" text-anchor="end"><tspan fill="var(--acc)">■</tspan> views  <tspan fill="var(--acc2)">■</tspan> visitors</text>';
+  return '<svg viewBox="0 0 '+W+" "+H+'" style="width:100%;height:auto">'+area
+    +'<polyline points="'+vPts+'" fill="none" stroke="var(--acc)" stroke-width="2"/>'
+    +'<polyline points="'+uPts+'" fill="none" stroke="var(--acc2)" stroke-width="2" stroke-dasharray="4 3"/>'
+    +dots+lbl+"</svg>";
+}
+
+// Traffic flow — the "money flow" of visits (§7d): where visitors come IN (sources),
+// which pages they land on and move through, and where they LEAVE. Three columns of
+// nodes joined by ribbons whose thickness is the count. Aggregate counts only.
+function flowSvg(r){
+  var entries=r.entries||[],edges=r.edges||[];
+  if(!entries.length&&!edges.length)return "";
+  var TOP=6;
+  function top(list,key){
+    var sums={};list.forEach(function(e){sums[e[key]]=(sums[e[key]]||0)+e.count});
+    return Object.keys(sums).map(function(k){return{k:k,c:sums[k]}})
+      .sort(function(a,b){return b.c-a.c||a.k.localeCompare(b.k)}).slice(0,TOP);
+  }
+  var srcs=top(entries,"source");
+  // Middle column: pages by total arrivals (landings + internal arrivals).
+  var arr={};entries.forEach(function(e){arr[e.path]=(arr[e.path]||0)+e.count});
+  edges.forEach(function(e){arr[e.to]=(arr[e.to]||0)+e.count});
+  var pages=Object.keys(arr).map(function(k){return{k:k,c:arr[k]}})
+    .sort(function(a,b){return b.c-a.c||a.k.localeCompare(b.k)}).slice(0,TOP);
+  var pageSet={};pages.forEach(function(p){pageSet[p.k]=true});
+  // Right column: onward destinations from the middle pages, plus "left the site".
+  var outs={},outSum={};
+  edges.forEach(function(e){if(pageSet[e.from]){outs[e.to]=(outs[e.to]||0)+e.count;outSum[e.from]=(outSum[e.from]||0)+e.count}});
+  var exits=0;pages.forEach(function(p){exits+=Math.max(0,p.c-(outSum[p.k]||0))});
+  var dests=Object.keys(outs).map(function(k){return{k:"→ "+k,c:outs[k]}})
+    .sort(function(a,b){return b.c-a.c||a.k.localeCompare(b.k)}).slice(0,TOP-1);
+  if(exits>0)dests.push({k:"left the site",c:exits});
+  if(!srcs.length||!pages.length)return "";
+
+  var W=920,PADX=190,GAP=6,ROWH=560/Math.max(srcs.length,pages.length,dests.length,1);
+  var H=Math.min(560,Math.max(220,ROWH*Math.max(srcs.length,pages.length,dests.length)));
+  function layout(list){
+    var total=0;list.forEach(function(n){total+=n.c});
+    var scale=(H-GAP*(list.length+1))/Math.max(1,total),yy=GAP;
+    return list.map(function(n){
+      var h=Math.max(14,n.c*scale);var o={k:n.k,c:n.c,y:yy,h:h};yy+=h+GAP;return o;
+    });
+  }
+  var L=layout(srcs),M=layout(pages),R=layout(dests);
+  var x1=PADX,x2=W/2-70,x3=W/2+70,x4=W-PADX;
+  function node(n,x,anchor,label){
+    return '<rect x="'+(anchor==="end"?x-8:x)+'" y="'+n.y+'" width="8" height="'+n.h+'" rx="3" fill="var(--acc2)" opacity="0.9"/>'
+      +'<text x="'+(anchor==="end"?x-14:x+14)+'" y="'+(n.y+n.h/2+3)+'" text-anchor="'+anchor+'" style="font-size:11px;fill:var(--fg)">'+esc(label)+' <tspan style="fill:var(--mut)">'+nfmt(n.c)+"</tspan></text>";
+  }
+  // Ribbons: proportionally slice each node's height across its links, in rank order.
+  function ribbons(links,from,to,fx,tx){
+    var used={},usedT={};
+    return links.map(function(l){
+      var f=null,t=null,i;
+      for(i=0;i<from.length;i++)if(from[i].k===l.f)f=from[i];
+      for(i=0;i<to.length;i++)if(to[i].k===l.t)t=to[i];
+      if(!f||!t)return "";
+      var fShare=Math.min(1,l.c/f.c)*f.h,tShare=Math.min(1,l.c/t.c)*t.h;
+      var fy=(used[l.f]=used[l.f]||f.y),ty=(usedT[l.t]=usedT[l.t]||t.y);
+      used[l.f]=Math.min(f.y+f.h,fy+fShare);usedT[l.t]=Math.min(t.y+t.h,ty+tShare);
+      var mx=(fx+tx)/2;
+      return '<path d="M'+fx+","+fy+" C"+mx+","+fy+" "+mx+","+ty+" "+tx+","+ty
+        +" L"+tx+","+(ty+tShare)+" C"+mx+","+(ty+tShare)+" "+mx+","+(fy+fShare)+" "+fx+","+(fy+fShare)
+        +' Z" fill="var(--acc)" opacity="0.25"><title>'+esc(l.f)+" → "+esc(l.t.replace(/^→ /,""))+" — "+nfmt(l.c)+"</title></path>";
+    }).join("");
+  }
+  var inLinks=entries.filter(function(e){return pageSet[e.path]}).map(function(e){return{f:e.source,t:e.path,c:e.count}});
+  var destSet={};R.forEach(function(d){destSet[d.k]=true});
+  var outLinks=edges.filter(function(e){return pageSet[e.from]&&destSet["→ "+e.to]}).map(function(e){return{f:e.from,t:"→ "+e.to,c:e.count}});
+  pages.forEach(function(p){var ex=Math.max(0,p.c-(outSum[p.k]||0));if(ex>0&&destSet["left the site"])outLinks.push({f:p.k,t:"left the site",c:ex})});
+
+  return '<svg viewBox="0 0 '+W+" "+H+'" style="width:100%;height:auto">'
+    +ribbons(inLinks,L,M,x1+8,x2)+ribbons(outLinks,M,R,x3,x4-8)
+    +L.map(function(n){return node(n,x1,"end",n.k==="direct"?"direct / typed in":n.k)}).join("")
+    +M.map(function(n){return node(n,x2,"start",n.k)}).join("")
+    +R.map(function(n){return node(n,x4,"end",n.k.replace(/^→ /,""))}).join("")
+    +"</svg>";
+}
+
+function bars(title,rows,empty,labelOf){
   if(!rows||!rows.length)return '<div class="card"><h2>'+title+'</h2><p class="mut">'+empty+"</p></div>";
   var max=rows[0].count||1;
   return '<div class="card"><h2>'+title+"</h2>"+rows.map(function(r){
-    return '<div class="brow"><span>'+esc(r.key||"(direct)")+'</span><span><span class="bar" style="display:block;width:'+Math.max(2,Math.round(r.count/max*100))+'%"></span></span><span>'+nfmt(r.count)+"</span></div>";
+    var label=labelOf?labelOf(r.key):esc(r.key||"(direct)");
+    return '<div class="brow"><span>'+label+'</span><span><span class="bar" style="display:block;width:'+Math.max(2,Math.round(r.count/max*100))+'%"></span></span><span>'+nfmt(r.count)+"</span></div>";
   }).join("")+"</div>";
 }
 
+function kpi(label,value,detail){
+  return '<div class="card"><div class="mut kd">'+label+'</div><div class="kpi">'+value+"</div>"+(detail?'<div class="mut kd">'+detail+"</div>":"")+"</div>";
+}
+
+function pct(a,b){return b>0?Math.round(a/b*100)+"%":"—"}
+
 function renderDetail(r){
   var tabs=[1,7,30].map(function(d){return '<button class="tab'+(d===days?" on":"")+'" data-d="'+d+'">'+(d===1?"Today":d+" days")+"</button>"}).join(" ");
+  var entriesTotal=0;(r.entries||[]).forEach(function(e){entriesTotal+=e.count});
+  var depth=entriesTotal>0?(r.views/entriesTotal).toFixed(1):null;
+  var known=(r.newVisitors||0)+(r.returningVisitors||0);
+
   var html='<div class="spread" style="margin-bottom:12px"><button class="ghost tab" id="back">← All sites</button><div class="row">'+tabs+"</div></div>";
   html+='<div class="grid" style="margin-bottom:16px">'
-    +'<div class="card"><div class="mut">Page views</div><div class="kpi">'+nfmt(r.views)+"</div></div>"
-    +'<div class="card"><div class="mut">Unique visitors</div><div class="kpi">'+nfmt(r.uniques)+'</div><div class="mut">daily uniques, summed</div></div>'
+    +kpi("Page views",nfmt(r.views))
+    +kpi("Unique visitors",nfmt(r.uniques),"daily uniques, summed")
+    +kpi("New visitors",known?nfmt(r.newVisitors):"—",known?pct(r.newVisitors,known)+" of known":"needs fresh data")
+    +kpi("Returning",known?nfmt(r.returningVisitors):"—",r.returningVisitors===0&&known?"within the salt window":"came back in the window")
+    +kpi("Pages per visit",depth||"—",depth?nfmt(entriesTotal)+" visits":"")
     +"</div>";
   if(!r.receiving)html+='<div class="card mut">No visits recorded in this period yet.</div>';
+
+  var trend=trendSvg(r);
+  if(trend)html+='<div class="card"><h2>'+(days===1?"Views by hour (UTC)":"Views & visitors by day")+"</h2>"+trend+"</div>";
+  var flow=flowSvg(r);
+  if(flow)html+='<div class="card"><h2>Traffic flow — in, through, and out</h2>'+flow+'<p class="mut" style="margin:8px 0 0">Where visits enter, the pages they move through, and where they leave. Counts, never individual visitors.</p></div>';
+
+  html+='<div class="grid2">';
   html+=bars("Top pages",r.topPages,"No pages yet");
   html+=bars("Referrers",r.topReferrers,"Direct visits only so far");
-  if(r.countries&&r.countries.length)html+=bars("Countries",r.countries,"");
+  if(r.countries&&r.countries.length)html+=bars("Countries",r.countries,"",function(cc){return '<span class="flag">'+flag(cc)+"</span>"+esc(cname(cc))});
   html+=bars("Browsers",r.browsers,"—");
   html+=bars("Operating systems",r.os,"—");
+  html+=bars("Screen sizes",r.sizes,"—");
+  if(r.utmSources&&r.utmSources.length)html+=bars("Campaign sources",r.utmSources,"");
+  if(r.utmCampaigns&&r.utmCampaigns.length)html+=bars("Campaigns",r.utmCampaigns,"");
+  html+="</div>";
+
   $("detail").innerHTML=html;
   $("back").addEventListener("click",renderSites);
   Array.prototype.forEach.call($("detail").querySelectorAll(".tab[data-d]"),function(el){

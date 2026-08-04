@@ -11,16 +11,21 @@ import {
 import type { CounterKey } from "./core";
 
 export interface Store {
-  /** The day's rotating salt, or undefined if not set yet. */
-  getSalt(day: string): Promise<string | undefined>;
-  /** Set the day's salt only if absent (so concurrent Lambdas don't clobber). */
-  putSaltIfAbsent(day: string, salt: string, expiresAt: number): Promise<void>;
+  /** The rotating salt for a window key (a day, or w#<days>#<n>), or undefined if unset. */
+  getSalt(windowKey: string): Promise<string | undefined>;
+  /** Set a window's salt only if absent (so concurrent Lambdas don't clobber). */
+  putSaltIfAbsent(windowKey: string, salt: string, expiresAt: number): Promise<void>;
   /** Atomic ADD 1 to total#views; returns the new count (for the daily cap). */
   bumpViews(pk: string): Promise<number>;
   /** Atomic ADD 1 to each counter row. */
   bumpCounters(keys: CounterKey[]): Promise<void>;
   /** Conditional put of a unique's daily-hash row; true iff newly inserted (first seen today). */
   putUniqueIfNew(pk: string, hash: string, expiresAt: number): Promise<boolean>;
+  /**
+   * The owner's salt-window choice for a site (§6b baseline), read off the site's registry
+   * row. Undefined when unset or the site doesn't exist — the caller defaults to 1 day.
+   */
+  getSiteSaltDays(siteId: string): Promise<number | undefined>;
 }
 
 /** Thrown-name DynamoDB uses when a conditional write's condition isn't met. */
@@ -32,25 +37,25 @@ export class DynamoStore implements Store {
     private readonly tableName: string,
   ) {}
 
-  async getSalt(day: string): Promise<string | undefined> {
+  async getSalt(windowKey: string): Promise<string | undefined> {
     const out = await this.db.send(
       new GetItemCommand({
         TableName: this.tableName,
-        Key: { pk: { S: "salt" }, sk: { S: day } },
+        Key: { pk: { S: "salt" }, sk: { S: windowKey } },
         ProjectionExpression: "saltValue",
       }),
     );
     return out.Item?.saltValue?.S;
   }
 
-  async putSaltIfAbsent(day: string, salt: string, expiresAt: number): Promise<void> {
+  async putSaltIfAbsent(windowKey: string, salt: string, expiresAt: number): Promise<void> {
     try {
       await this.db.send(
         new PutItemCommand({
           TableName: this.tableName,
           Item: {
             pk: { S: "salt" },
-            sk: { S: day },
+            sk: { S: windowKey },
             saltValue: { S: salt },
             expiresAt: { N: String(expiresAt) },
           },
@@ -61,6 +66,18 @@ export class DynamoStore implements Store {
       // Another Lambda set it first — fine, we'll read theirs.
       if ((e as { name?: string }).name !== CONDITION_FAILED) throw e;
     }
+  }
+
+  async getSiteSaltDays(siteId: string): Promise<number | undefined> {
+    const out = await this.db.send(
+      new GetItemCommand({
+        TableName: this.tableName,
+        Key: { pk: { S: "sites" }, sk: { S: `site#${siteId}` } },
+        ProjectionExpression: "saltDays",
+      }),
+    );
+    const n = Number(out.Item?.saltDays?.N);
+    return Number.isFinite(n) && n >= 1 ? n : undefined;
   }
 
   async bumpViews(pk: string): Promise<number> {

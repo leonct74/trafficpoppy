@@ -34,3 +34,37 @@ describe("password rules on the login page", () => {
     expect(passwordRules({ ...PASSWORD_POLICY, RequireSymbols: true })).toContain("and a symbol");
   });
 });
+
+/**
+ * The professional dashboard (founder decision 2026-08-04): trend + traffic flow +
+ * countries with flags, all hand-rolled SVG. These pin the page's self-containment —
+ * a viewer's first paint must never wait on a third-party download.
+ */
+describe("dashboard v2 — professional and fully self-contained", () => {
+  const page = dashboardHtml({ region: "eu-west-1", userPoolClientId: "client123" });
+
+  it("loads NOTHING from outside its own origin except Cognito's login endpoint", () => {
+    const externals = page.match(/https:\/\/[a-z0-9.-]+/gi) ?? [];
+    for (const url of externals) expect(url).toContain("cognito-idp.");
+    expect(page).not.toMatch(/<script src|<link rel="stylesheet"|@import|fonts\./);
+  });
+
+  it("renders countries as flag + full name, derived purely from the stored code", () => {
+    expect(page).toContain("0x1F1E6"); // regional-indicator emoji arithmetic
+    expect(page).toContain("Intl.DisplayNames");
+  });
+
+  it("ships the trend chart and the traffic-flow chart", () => {
+    expect(page).toContain("trendSvg");
+    expect(page).toContain("flowSvg");
+    expect(page).toContain("Traffic flow");
+    // The flow view is explicit that it is aggregate-only — the §7d privacy posture.
+    expect(page).toContain("never individual visitors");
+  });
+
+  it("shows new vs returning and pages-per-visit KPIs", () => {
+    expect(page).toContain("New visitors");
+    expect(page).toContain("Returning");
+    expect(page).toContain("Pages per visit");
+  });
+});

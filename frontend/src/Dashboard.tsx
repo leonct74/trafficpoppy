@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "./api";
+import { Button } from "./Button";
 import type { LiveStats, RangeStats, Site } from "./types";
 
 /**
@@ -154,6 +155,16 @@ export function Dashboard(props: { site: Site; onBack: () => void; onIntegrate?:
                 series={range.days.map((d) => d.uniques)}
                 hint={days > 1 ? "Each visitor counts once per day — days can't be linked, by design." : undefined}
               />
+              {range.newVisitors + range.returningVisitors > 0 && (
+                <>
+                  <Metric label="New visitors" value={range.newVisitors} />
+                  <Metric
+                    label="Returning"
+                    value={range.returningVisitors}
+                    hint="Seen earlier within this site's recognition window (set below)."
+                  />
+                </>
+              )}
               {days > 1 && <Metric label="Views / day" value={Math.round(range.views / days)} />}
             </div>
             {days > 1 && <AreaChart series={range.days} />}
@@ -197,6 +208,77 @@ export function Dashboard(props: { site: Site; onBack: () => void; onIntegrate?:
             <CostCard monthViews={monthViews} />
           </div>
         </>
+      )}
+
+      <SaltWindowCard site={site} />
+    </div>
+  );
+}
+
+/**
+ * The §6b baseline selector: how many days a visitor stays recognizable as "the same
+ * visitor" (1–7, default 1). The salt lives server-side — the visitor's device is never
+ * touched — so this whole range needs no consent banner anywhere; the trade is stated in
+ * plain words at the point of choice (§6b rule 4), and 7 days is a HARD ceiling. GPC/DNT
+ * visitors are never counted at any setting.
+ */
+export function SaltWindowCard(props: { site: Site }) {
+  const [saltDays, setSaltDays] = useState<number>(props.site.saltDays ?? 1);
+  const [saved, setSaved] = useState<number>(props.site.saltDays ?? 1);
+  const [err, setErr] = useState<string | null>(null);
+
+  const save = async () => {
+    setErr(null);
+    try {
+      const r = await api.updateSiteSettings(props.site.id, { saltDays });
+      setSaved(r.saltDays);
+      setSaltDays(r.saltDays);
+    } catch (e) {
+      setErr((e as Error).message);
+    }
+  };
+
+  return (
+    <div className="card stack">
+      <h2 className="section-title" style={{ margin: 0 }}>
+        Returning-visitor recognition
+      </h2>
+      <p style={{ margin: 0 }}>
+        Recognize a returning visitor for{" "}
+        <select
+          className="input"
+          style={{ width: "auto", display: "inline-block" }}
+          aria-label="Recognition window in days"
+          value={saltDays}
+          onChange={(e) => setSaltDays(Number(e.target.value))}
+        >
+          {[1, 2, 3, 4, 5, 6, 7].map((d) => (
+            <option key={d} value={d}>
+              {d === 1 ? "1 day" : `${d} days`}
+            </option>
+          ))}
+        </select>{" "}
+        after their first visit.
+      </p>
+      <p className="muted" style={{ margin: 0, fontSize: 12 }}>
+        {saltDays === 1 ? (
+          <>Strictest setting: every day stands alone, so returning visitors can't be measured at all.</>
+        ) : (
+          <>
+            {saltDays} days: you'll see visitors returning within {saltDays === 7 ? "a week" : `${saltDays} days`} —
+            and a visitor stays recognizable to this site for up to {saltDays} days, on your responsibility.
+          </>
+        )}{" "}
+        Nothing is ever stored on the visitor's device, and visitors who opted out (GPC/DNT) are never counted.
+        Seven days is the ceiling.
+      </p>
+      {err && <div className="banner err">{err}</div>}
+      {saltDays !== saved && (
+        <div>
+          <Button className="btn btn-primary btn-sm" busyLabel="Saving…" onClick={save}>
+            Save
+          </Button>
+        </div>
       )}
     </div>
   );

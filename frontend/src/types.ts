@@ -37,6 +37,8 @@ export interface Site {
   name: string;
   domain: string;
   createdAt: string;
+  /** The §6b recognition window in days (1–7). Absent ⇒ 1 (the strict default). */
+  saltDays?: number;
 }
 
 /** The dashboard's range read. Mirrors RangeStats in backend/src/sites.ts. */
@@ -62,6 +64,12 @@ export interface RangeStats {
   countries: { key: string; count: number }[];
   /** Views per UTC hour-of-day, 24 buckets (index = hour). */
   hours: number[];
+  /** Of the range's daily uniques: first-seen vs seen-earlier within the §6b window. */
+  newVisitors: number;
+  returningVisitors: number;
+  /** Traffic flow (§7d) — aggregate counts only, never individual visitors. */
+  entries: { source: string; path: string; count: number }[];
+  edges: { from: string; to: string; count: number }[];
   /** The immediately-preceding window of the same length — for Δ% and top movers. */
   prev?: {
     views: number;

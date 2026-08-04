@@ -23,6 +23,13 @@ export interface RawEvent {
   /** page query string (location.search) — server extracts allowlisted utm, drops the rest */ q?: unknown;
   /** referrer (document.referrer) — server reduces to hostname */ r?: unknown;
   /** viewport width in CSS px */ w?: unknown;
+  /**
+   * Previous SAME-SITE path (the referrer's path when the referrer is this site, or the
+   * SPA path navigated away from). Powers the aggregate traffic-flow counters (§7d):
+   * page→page transition COUNTS only — never tied to a visitor, and only ever a path on
+   * the owner's own site (external referrers stay hostname-only, the §6 invariant).
+   */
+  v?: unknown;
 }
 
 /** Request context the handler pulls from headers (not from the body). */
@@ -49,6 +56,8 @@ export interface NormalizedEvent {
   utm: Partial<Record<(typeof UTM_ALLOWLIST)[number], string>>;
   /** Two-letter country code (True Reach tier only) — country-level, never finer. */
   country?: string;
+  /** Previous same-site path (traffic flow). Mutually exclusive with referrerHost. */
+  prevPath?: string;
 }
 
 const MAX_SITE_ID = 64;
@@ -163,15 +172,22 @@ export function normalize(raw: RawEvent, ctx: RequestContext, ownHost?: string):
       ? ctx.country
       : undefined;
 
+  // The previous same-site path (traffic flow). Held to the same shape rules as `path`,
+  // and never alongside an external referrer: an event is either an ENTRY (came from
+  // outside — referrer hostname only) or an internal STEP (prev path only), never both.
+  const refHost = referrerHost(raw.r, ownHost);
+  const prevPath = refHost ? undefined : normalizePath(raw.v);
+
   return {
     siteId,
     path,
-    referrerHost: referrerHost(raw.r, ownHost),
+    referrerHost: refHost,
     browser: browserFamily(ctx.userAgent),
     os: osFamily(ctx.userAgent),
     size: sizeBucket(raw.w),
     utm: allowlistedUtm(raw.q),
     country,
+    prevPath: prevPath === path ? undefined : prevPath, // a reload is not a transition
   };
 }
 
@@ -212,6 +228,15 @@ export function counterKeys(ev: NormalizedEvent, day: string): CounterKey[] {
   for (const key of UTM_ALLOWLIST) {
     const v = ev.utm[key];
     if (v) keys.push({ pk, sk: `${key}#${v}` });
+  }
+  // Traffic flow (§7d): AGGREGATE counts only — no visitor attached, no sequence longer
+  // than one adjacent pair. Paths never contain "#" (normalizePath strips it), so the
+  // sk grammar is unambiguous. An internal step counts an edge; anything else is an
+  // entry from a source ("direct" when there was no referrer at all).
+  if (ev.prevPath) {
+    keys.push({ pk, sk: `edge#${ev.prevPath}#${ev.path}` });
+  } else {
+    keys.push({ pk, sk: `entry#${ev.referrerHost ?? "direct"}#${ev.path}` });
   }
   return keys;
 }

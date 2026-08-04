@@ -148,11 +148,16 @@ execution role**, so unlike VM-Poppy this poppy cannot be IAM-free. Same class a
   not OSI open source, and technical buyers of a privacy product will call that out.
 - GPC/DNT honored (§3). UA reduced to coarse browser+OS families before storage.
 
-## 6b. Consent-gated retention windows — *PROPOSED, NOT DECIDED* (founder idea 2026-07-25)
+## 6b. Consent-gated retention windows (founder idea 2026-07-25)
 
-**Status: proposal only.** Nothing here is built or committed. Needs a founder go/no-go **and
-a lawyer's review** before any code. The default posture in §4/§6 (daily salt, banner-free)
-stays the product's spine either way.
+**Status: the BASELINE TIER (1–7 days, owner-chosen, default 1, no banner) is DECIDED and
+BUILT — founder 2026-08-04** ("let the owner decide how long the salt is maintained, under
+their responsibility"). The selector lives on each site's dashboard with the §rule-4 plain
+wording; both the registry write AND the collector clamp to 7, so no stored value can ever
+exceed the consent-free ceiling. The **extended tier (beyond 7 days, consent-gated) stays
+NOT DECIDED** — it still needs counsel (questions (a)–(e) below), and the geo-unlock shape
+remains rejected exactly as recorded. The default posture in §4/§6 (1-day salt, banner-free)
+stays the product's spine.
 
 **The want:** returning-visitor / multi-day audience insight, which §4 makes cryptographically
 impossible today. **The mechanism:** the salt-rotation window becomes owner-configurable, so a
@@ -317,6 +322,35 @@ without AWS credentials**. Solution = the MailPoppy admin/member split, reapplie
   they are not deployed into the customer's own account.
 
 ## 7c. The external client — how a Verified poppy still monetises (founder decision 2026-07-25)
+
+> **AMENDED (founder, 2026-08-04): the built-in viewer IS the professional dashboard.**
+> "TrafficPoppy must become a serious, compliant alternative to Google Analytics" — a plain
+> free page failed that bar, so the viewer Lambda's page now carries the professional
+> rendering (trend chart, traffic-flow chart, countries with flags, new-vs-returning), all
+> hand-rolled SVG, still dependency-free. Consequence accepted with eyes open: that code is
+> deployed into the customer's AWS and is copyable — **monetisation does NOT rest on chart
+> quality; it rests on True Reach** (custom domain, geo, per-domain subscription). The
+> external client below stays a valid future play (hosted convenience, branding loop,
+> mobile UX) but is parked, not a prerequisite. The table's "plain built-in dashboard"
+> row reads accordingly.
+
+## 7d. Traffic flow — the "money flow" of visits (founder ask 2026-08-04)
+
+Where visits come IN (sources), which pages they move THROUGH, and where they LEAVE —
+rendered as a three-column flow chart. **The data model is aggregate-only and this is a
+privacy line, not an implementation detail:**
+
+- Two new counter families in the day partition: `entry#<source>#<landing-path>` (source =
+  external referrer HOSTNAME or `direct`) and `edge#<from-path>#<to-path>` (same-site
+  transitions). Counts only: **no visitor attached, no session id, no chain longer than one
+  adjacent pair** — a path CANNOT be replayed per person, only summed per pair.
+- The split between "entry" and "internal step" happens **in t.js**: many sites share one
+  collector, so only the browser knows the site's own host. A same-site referrer becomes a
+  `v` (previous path); the external-referrer invariant (hostname only) is untouched. An
+  event is entry OR step, never both; a reload is neither.
+- Exits are DERIVED at render time (arrivals into a page minus departures from it) — never
+  collected. "Pages per visit" = views / entries.
+- GPC/DNT still means nothing is counted; the tracker stayed under its size budget.
 
 **The problem this solves.** The premium value is beautiful reports. If they ship inside the
 poppy, they are (a) public in a Verified repo and (b) **deployed into the customer's own AWS**,
@@ -800,3 +834,25 @@ materializes.
   browsers beacon to, and the free-tier page rides a premium feature. No new grants.
   Weighed and rejected: separate `dash.<domain>` (second cert + two more DNS records for
   no isolation gain — same account, same origin Lambda either way).
+- 2026-08-04 — **The GA-alternative build: professional dashboard + traffic flow + the §6b
+  baseline shipped.** Founder framing: *"TrafficPoppy must become a serious, compliant
+  alternative to Google Analytics."* Three pieces, one release:
+  (1) **Viewer dashboard v2** (§7c amendment above): trend chart (views area + visitors
+  line; hour bars for Today), the **traffic-flow chart** (§7d: sources → pages → onward/
+  left-the-site, ribbon widths = counts), countries as **flag + full name** (emoji
+  regional-indicator arithmetic + `Intl.DisplayNames` — zero assets), new-vs-returning and
+  pages-per-visit KPIs. Hand-rolled SVG; the page still loads nothing from outside its own
+  origin except Cognito (test-pinned).
+  (2) **Traffic-flow collection** (§7d): `entry#`/`edge#` counters; entry-vs-step decided
+  in t.js (only the browser knows the site's host — this also stops same-site referrers
+  polluting `ref#`); tracker stayed under budget (2048-char test) by trimming comments.
+  (3) **§6b BASELINE decided + built**: per-site `saltDays` 1–7 (default 1) on the registry
+  row; salt keys `w#<days>#<n>` for multi-day windows (1-day keeps the `YYYY-MM-DD` key so
+  live deployments roll over without a salt reset); salt + hash rows TTL to window end +2d
+  — **hash retention SHORTENED from the old fixed 40 days**; `total#new`/`total#returning`
+  from one extra window-scoped conditional put (same hash, no extra identity); clamped to 7
+  in BOTH the registry write and the collector; GPC/DNT untouched at every setting. The
+  desktop selector card carries the rule-4 wording verbatim. Note for §14 readers: counters
+  written before this release have no entry/edge/new rows — the dashboards show "—" or hide
+  the card rather than implying zeros. Collector Lambda code + t.js changed ⇒ next stack
+  update ships it (updateAvailable watches the code key).

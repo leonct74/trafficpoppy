@@ -47,6 +47,10 @@ export const api = {
   removeViewer: (email: string): Promise<{ ok: true }> =>
     host.invokeBackend({ method: "DELETE", path: `/viewers/${encodeURIComponent(email)}` }),
 
+  /** §6b: the site's returning-visitor recognition window (1–7 days, server-clamped). */
+  updateSiteSettings: (id: string, settings: { saltDays: number }): Promise<{ saltDays: number }> =>
+    host.invokeBackend({ method: "PUT", path: `/sites/${encodeURIComponent(id)}/settings`, body: settings }),
+
   /** True Reach (custom domain): live state, deploy, remove. */
   edgeStatus: (): Promise<{ edge: EdgeStatus }> => host.invokeBackend({ method: "GET", path: "/truereach" }),
   edgeDeploy: (domain: string): Promise<{ operation: string }> =>

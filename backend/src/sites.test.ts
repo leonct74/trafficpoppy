@@ -188,6 +188,55 @@ describe("SiteRegistry.rangeStats — the dashboard's range read", () => {
     expect(r.views).toBe(0);
     expect(r.days).toHaveLength(2); // series still covers the whole range, zero-filled
   });
+
+  it("reduces traffic flow + new/returning (§6b, §7d) — aggregate pairs, split on the first '#'", async () => {
+    const db = dbByDay({
+      "2026-08-04": [
+        { sk: "total#views", count: 9 },
+        { sk: "total#new", count: 3 },
+        { sk: "total#returning", count: 2 },
+        { sk: "entry#t.co#/pricing", count: 4 },
+        { sk: "entry#direct#/", count: 2 },
+        { sk: "edge#/pricing#/signup", count: 3 },
+        { sk: "edge#/#/pricing", count: 1 },
+      ],
+    });
+    const r = await reg(db).rangeStats("s1", ["2026-08-04"]);
+    expect(r.newVisitors).toBe(3);
+    expect(r.returningVisitors).toBe(2);
+    expect(r.entries[0]).toEqual({ source: "t.co", path: "/pricing", count: 4 });
+    expect(r.entries).toContainEqual({ source: "direct", path: "/", count: 2 });
+    // Paths on BOTH sides of an edge survive the split intact (they contain no '#').
+    expect(r.edges[0]).toEqual({ from: "/pricing", to: "/signup", count: 3 });
+    expect(r.edges).toContainEqual({ from: "/", to: "/pricing", count: 1 });
+  });
+});
+
+describe("SiteRegistry.setSaltDays — the §6b selector's write path", () => {
+  const capture = () => {
+    const sent: any[] = [];
+    const db = { send: vi.fn(async (cmd: any) => (sent.push(cmd), {})) } as unknown as DynamoDBClient;
+    return { db, sent };
+  };
+
+  it("stores a clamped window and never lets anything beyond 7 days persist", async () => {
+    const { db, sent } = capture();
+    expect(await reg(db).setSaltDays("s1", 365)).toBe(7); // the consent-free ceiling
+    expect(sent[0].input.UpdateExpression).toBe("SET saltDays = :d");
+    expect(sent[0].input.ExpressionAttributeValues[":d"].N).toBe("7");
+    expect(sent[0].input.ConditionExpression).toBe("attribute_exists(sk)");
+  });
+
+  it("resets to the default by REMOVING the attribute (old rows stay byte-identical)", async () => {
+    const { db, sent } = capture();
+    expect(await reg(db).setSaltDays("s1", 1)).toBe(1);
+    expect(sent[0].input.UpdateExpression).toBe("REMOVE saltDays");
+  });
+
+  it("junk input falls back to the 1-day default, never an error the UI has to explain", async () => {
+    const { db } = capture();
+    expect(await reg(db).setSaltDays("s1", "banana")).toBe(1);
+  });
 });
 
 describe("SiteRegistry.live — the last-30-minutes ticker", () => {

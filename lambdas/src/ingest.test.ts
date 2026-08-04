@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { currentSalt, ingest, utcDay, visitorHash, type IngestDeps } from "./ingest";
+import { clampSaltDays, currentSalt, ingest, saltWindow, utcDay, visitorHash, type IngestDeps } from "./ingest";
 import { normalize } from "./core";
 import type { Store } from "./store";
 import type { CounterKey } from "./core";
@@ -25,6 +25,7 @@ function fakeStore(seed?: { salt?: Record<string, string>; uniques?: Set<string>
       uniques.add(key);
       return true;
     },
+    getSiteSaltDays: async () => undefined,
   };
   return { store, salts, uniques, counters, viewsNow: () => views };
 }
@@ -33,8 +34,20 @@ const at = (iso: string) => () => new Date(iso);
 const ev = normalize({ s: "s1", p: "/x", w: 400 }, { doNotTrack: false })!;
 
 function deps(over: Partial<IngestDeps> & { store: Store }): IngestDeps {
-  return { now: at("2026-07-18T09:00:00Z"), freshSalt: () => "SALT_A", dailyCap: 1000, ...over };
+  return {
+    now: at("2026-07-18T09:00:00Z"),
+    freshSalt: () => "SALT_A",
+    dailyCap: 1000,
+    getSaltDays: async () => 1,
+    ...over,
+  };
 }
+
+/** A 1-day window for the given day — what currentSalt sees on the default tier. */
+const dayWindow = (day: string) => ({
+  key: day,
+  endsAtSec: (Math.floor(Date.parse(`${day}T00:00:00Z`) / 86_400_000) + 1) * 86_400,
+});
 
 describe("utcDay", () => {
   it("is the UTC calendar day", () => {
@@ -56,18 +69,97 @@ describe("visitorHash — the raw IP is an input only, never recoverable", () =>
   });
 });
 
-describe("currentSalt — rotates daily, destroyed after (DESIGN.md §4)", () => {
-  it("mints and stores a fresh salt on the first hit of a new day", async () => {
+describe("currentSalt — rotates with the window, destroyed after (DESIGN.md §4, §6b)", () => {
+  it("mints and stores a fresh salt on the first hit of a new window", async () => {
     const f = fakeStore();
-    const salt = await currentSalt(deps({ store: f.store }), "2026-07-18");
+    const salt = await currentSalt(deps({ store: f.store }), dayWindow("2026-07-18"));
     expect(salt).toBe("SALT_A");
     expect(f.salts.get("2026-07-18")).toBe("SALT_A");
   });
 
-  it("reuses the existing salt for the rest of the day", async () => {
+  it("reuses the existing salt for the rest of the window", async () => {
     const f = fakeStore({ salt: { "2026-07-18": "EXISTING" } });
-    const salt = await currentSalt(deps({ store: f.store, freshSalt: () => "SHOULD_NOT_BE_USED" }), "2026-07-18");
+    const salt = await currentSalt(
+      deps({ store: f.store, freshSalt: () => "SHOULD_NOT_BE_USED" }),
+      dayWindow("2026-07-18"),
+    );
     expect(salt).toBe("EXISTING");
+  });
+});
+
+describe("saltWindow — §6b baseline windows are fixed UTC buckets, 1–7 days", () => {
+  it("a 1-day window IS the UTC day — existing deployments roll over without a salt reset", () => {
+    const w = saltWindow(new Date("2026-07-18T09:00:00Z"), 1);
+    expect(w.key).toBe("2026-07-18");
+    expect(w.endsAtSec).toBe(Date.parse("2026-07-19T00:00:00Z") / 1000);
+  });
+
+  it("a multi-day window buckets epoch days, so every Lambda agrees without coordination", () => {
+    const a = saltWindow(new Date("2026-07-18T00:00:00Z"), 7);
+    const b = saltWindow(new Date("2026-07-18T23:59:59Z"), 7);
+    expect(a.key).toBe(b.key);
+    expect(a.key).toMatch(/^w#7#\d+$/);
+  });
+
+  it("windows of different lengths never share a salt (distinct key namespaces)", () => {
+    const d = new Date("2026-07-18T09:00:00Z");
+    expect(saltWindow(d, 3).key).not.toBe(saltWindow(d, 7).key);
+    expect(saltWindow(d, 3).key).not.toBe(saltWindow(d, 1).key);
+  });
+
+  it("clampSaltDays enforces the consent-free ceiling — nothing stored can exceed 7 days", () => {
+    expect(clampSaltDays(365)).toBe(7); // the §6b hard cap, whatever an owner writes
+    expect(clampSaltDays(0)).toBe(1);
+    expect(clampSaltDays(-3)).toBe(1);
+    expect(clampSaltDays("junk")).toBe(1);
+    expect(clampSaltDays(undefined)).toBe(1);
+    expect(clampSaltDays(4.9)).toBe(4);
+  });
+});
+
+describe("new vs returning (§6b's free by-product) — no extra identity, one more TTL'd row", () => {
+  const week = { getSaltDays: async () => 7 };
+
+  it("first-ever visit in a window counts as new", async () => {
+    const f = fakeStore();
+    await ingest(ev, "9.9.9.9", "UA", deps({ store: f.store, ...week }));
+    expect(f.counters.get("site#s1#day#2026-07-18|total#new")).toBe(1);
+    expect(f.counters.get("site#s1#day#2026-07-18|total#returning")).toBeUndefined();
+  });
+
+  it("the same visitor on a LATER DAY of the same window counts as returning", async () => {
+    const f = fakeStore();
+    const d1 = deps({ store: f.store, ...week, now: at("2026-07-16T09:00:00Z") });
+    const d2 = deps({ store: f.store, ...week, now: at("2026-07-17T09:00:00Z") });
+    await ingest(ev, "9.9.9.9", "UA", d1);
+    await ingest(ev, "9.9.9.9", "UA", d2);
+    // Day 2 is a fresh daily unique, but the window row already held the hash.
+    expect(f.counters.get("site#s1#day#2026-07-17|total#returning")).toBe(1);
+    expect(f.counters.get("site#s1#day#2026-07-17|total#new")).toBeUndefined();
+    // Both days still count the visitor as that day's unique — daily uniques are untouched.
+    expect(f.counters.get("site#s1#day#2026-07-16|total#uniques")).toBe(1);
+    expect(f.counters.get("site#s1#day#2026-07-17|total#uniques")).toBe(1);
+  });
+
+  it("a 1-day window counts every unique as new — returns are unknowable by construction", async () => {
+    const f = fakeStore();
+    await ingest(ev, "9.9.9.9", "UA", deps({ store: f.store, getSaltDays: async () => 1 }));
+    expect(f.counters.get("site#s1#day#2026-07-18|total#new")).toBe(1);
+    // And no window row beyond the daily one was written.
+    for (const u of f.uniques) expect(u).not.toContain("uniq#w#");
+  });
+
+  it("hash rows age out with the window, never a fixed 40 days", async () => {
+    const f = fakeStore();
+    const ttls: number[] = [];
+    const orig = f.store.putUniqueIfNew;
+    f.store.putUniqueIfNew = async (pk, hash, expiresAt) => {
+      ttls.push(expiresAt);
+      return orig(pk, hash, expiresAt);
+    };
+    await ingest(ev, "9.9.9.9", "UA", deps({ store: f.store, ...week, now: at("2026-07-16T09:00:00Z") }));
+    const windowEnd = saltWindow(new Date("2026-07-16T09:00:00Z"), 7).endsAtSec;
+    for (const t of ttls) expect(t).toBe(windowEnd + 2 * 86_400);
   });
 });
 

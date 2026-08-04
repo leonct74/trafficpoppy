@@ -15,8 +15,16 @@ function fakeDeps(): HandlerDeps & { calls: { views: number; counters: number; u
       calls.uniques.push(hash);
       return true;
     },
+    getSiteSaltDays: async () => undefined,
   };
-  return { store, now: () => new Date("2026-07-18T00:00:00Z"), freshSalt: () => "SALT", dailyCap: 1000, calls };
+  return {
+    store,
+    now: () => new Date("2026-07-18T00:00:00Z"),
+    freshSalt: () => "SALT",
+    dailyCap: 1000,
+    getSaltDays: async () => 1,
+    calls,
+  };
 }
 
 const req = (over: Record<string, unknown>) => ({

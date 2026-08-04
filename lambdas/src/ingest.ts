@@ -23,6 +23,11 @@ export interface IngestDeps {
    * detail rows. Generous by default; overridable via env in the handler.
    */
   dailyCap: number;
+  /**
+   * The owner's salt window for a site in days (§6b baseline, 1–7). The handler supplies a
+   * short-cached registry read; ingest clamps whatever arrives. Absent/invalid ⇒ 1 day.
+   */
+  getSaltDays: (siteId: string) => Promise<number | undefined>;
 }
 
 /** The UTC calendar day (YYYY-MM-DD) — the unit every counter partition is keyed by. */
@@ -30,22 +35,50 @@ export function utcDay(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
 
+/** The §6b baseline bounds: the salt window is owner-chosen between 1 and 7 days, never more. */
+export const MIN_SALT_DAYS = 1;
+export const MAX_SALT_DAYS = 7;
+export const DEFAULT_SALT_DAYS = 1;
+
+/** Clamp an owner-supplied window to the §6b consent-free ceiling (1–7 days). */
+export function clampSaltDays(n: unknown): number {
+  const v = Math.floor(Number(n));
+  if (!Number.isFinite(v)) return DEFAULT_SALT_DAYS;
+  return Math.min(MAX_SALT_DAYS, Math.max(MIN_SALT_DAYS, v));
+}
+
 /**
- * The day's rotating salt: read it, or mint + conditionally store a fresh one (winning any
- * race by re-reading). Salt rows carry a short TTL so yesterday's salt is DESTROYED within
- * a couple of days — after which that day's visitor hashes are permanently unlinkable, so
- * cross-day tracking is cryptographically dead (DESIGN.md §4). The daily hash itself
- * includes the salt, so a new day ⇒ new salt ⇒ a returning visitor is uncorrelatable.
+ * The salt window a moment belongs to (§6b): windows are fixed UTC epoch-day buckets of
+ * `saltDays` length, so every Lambda derives the same window without coordination.
+ * A 1-day window keeps the ORIGINAL per-day key (`YYYY-MM-DD`) byte-for-byte, so existing
+ * deployments roll over a deploy without a salt reset.
  */
-export async function currentSalt(deps: IngestDeps, day: string): Promise<string> {
-  const existing = await deps.store.getSalt(day);
+export function saltWindow(now: Date, saltDays: number): { key: string; endsAtSec: number } {
+  const epochDay = Math.floor(now.getTime() / DAY_MS);
+  if (saltDays <= 1) {
+    return { key: utcDay(now), endsAtSec: ((epochDay + 1) * DAY_MS) / 1000 };
+  }
+  const index = Math.floor(epochDay / saltDays);
+  return { key: `w#${saltDays}#${index}`, endsAtSec: ((index + 1) * saltDays * DAY_MS) / 1000 };
+}
+
+/**
+ * The window's rotating salt: read it, or mint + conditionally store a fresh one (winning
+ * any race by re-reading). Salt rows carry a short TTL so an expired window's salt is
+ * DESTROYED within a couple of days — after which that window's visitor hashes are
+ * permanently unlinkable, so tracking beyond the window is cryptographically dead
+ * (DESIGN.md §4, §6b). The hash includes the salt, so a new window ⇒ a returning visitor
+ * is uncorrelatable with the previous one.
+ */
+export async function currentSalt(deps: IngestDeps, window: { key: string; endsAtSec: number }): Promise<string> {
+  const existing = await deps.store.getSalt(window.key);
   if (existing) return existing;
   const fresh = deps.freshSalt();
-  // Salt outlives its day only long enough to avoid a midnight-boundary gap, then dies.
-  const expiresAt = Math.floor(deps.now().getTime() / 1000) + (2 * DAY_MS) / 1000;
-  await deps.store.putSaltIfAbsent(day, fresh, expiresAt);
+  // Salt outlives its window only long enough to avoid a boundary gap, then dies.
+  const expiresAt = window.endsAtSec + (2 * DAY_MS) / 1000;
+  await deps.store.putSaltIfAbsent(window.key, fresh, expiresAt);
   // Re-read: if a concurrent Lambda's salt landed first, everyone must agree on one value.
-  return (await deps.store.getSalt(day)) ?? fresh;
+  return (await deps.store.getSalt(window.key)) ?? fresh;
 }
 
 /**
@@ -66,7 +99,7 @@ export interface IngestResult {
 }
 
 /**
- * Apply one pageview. `ip` and `ua` are used only to compute the daily hash and are not
+ * Apply one pageview. `ip` and `ua` are used only to compute the window hash and are not
  * persisted. Returns what happened, for the handler's response + logging (never the hash).
  */
 export async function ingest(
@@ -97,13 +130,35 @@ export async function ingest(
   detail.push({ pk: recentPk(ev.siteId), sk: `t#${minute}`, expiresAt: Math.floor(nowMs / 1000) + 7200 });
   await deps.store.bumpCounters(detail);
 
+  // The salt window (§6b baseline): owner-chosen 1–7 days, clamped server-side so no
+  // stored value can ever exceed the consent-free ceiling. Default and floor: 1 day.
+  const saltDays = clampSaltDays(await deps.getSaltDays(ev.siteId));
+  const window = saltWindow(deps.now(), saltDays);
+
   // Daily unique: conditional put of the salted hash; only the first hit of the day counts.
-  const salt = await currentSalt(deps, day);
+  // Hash rows age out with the window (+2d grace), NOT a fixed 40 days — while the salt is
+  // shared inside a window, the rows are the only place the hash exists at rest.
+  const salt = await currentSalt(deps, window);
   const hash = visitorHash(salt, ip, ua, ev.siteId);
-  const expiresAt = Math.floor(deps.now().getTime() / 1000) + (40 * DAY_MS) / 1000;
+  const expiresAt = window.endsAtSec + (2 * DAY_MS) / 1000;
   const newVisitor = await deps.store.putUniqueIfNew(uniqPk(ev.siteId, day), hash, expiresAt);
   if (newVisitor) {
-    await deps.store.bumpCounters([{ pk, sk: "total#uniques" }]);
+    const bumps = [{ pk, sk: "total#uniques" }];
+    // New vs returning (§6b's free by-product): with a multi-day window, the window-scoped
+    // dedup row tells us whether today's first visit is the visitor's first in the WINDOW.
+    // No extra identity is kept — it's the same hash, in one more TTL'd row. A 1-day window
+    // can't see returns by construction, so every unique is "new" (the UI says why).
+    if (saltDays > 1) {
+      const firstInWindow = await deps.store.putUniqueIfNew(
+        `site#${ev.siteId}#uniq#${window.key}`,
+        hash,
+        expiresAt,
+      );
+      bumps.push({ pk, sk: firstInWindow ? "total#new" : "total#returning" });
+    } else {
+      bumps.push({ pk, sk: "total#new" });
+    }
+    await deps.store.bumpCounters(bumps);
   }
 
   return { counted: true, capped: false, newVisitor };

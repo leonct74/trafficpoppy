@@ -1,15 +1,19 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { computeMovers, costApprox, countryLabel, Dashboard } from "./Dashboard";
+import { computeMovers, costApprox, countryLabel, Dashboard, SaltWindowCard } from "./Dashboard";
 import { api } from "./api";
 import type { RangeStats } from "./types";
 
 vi.mock("./api", () => ({
-  api: { rangeStats: vi.fn(), liveStats: vi.fn() },
+  api: { rangeStats: vi.fn(), liveStats: vi.fn(), updateSiteSettings: vi.fn() },
 }));
 
-const mocked = api as unknown as { rangeStats: ReturnType<typeof vi.fn>; liveStats: ReturnType<typeof vi.fn> };
+const mocked = api as unknown as {
+  rangeStats: ReturnType<typeof vi.fn>;
+  liveStats: ReturnType<typeof vi.fn>;
+  updateSiteSettings: ReturnType<typeof vi.fn>;
+};
 
 const site = { id: "s1", name: "Olly Digital", domain: "ollydigital.com", createdAt: "2026-07-18" };
 
@@ -37,6 +41,10 @@ function range(over: Partial<RangeStats> = {}): RangeStats {
     utmMediums: [],
     countries: [],
     hours: Array.from({ length: 24 }, (_, h) => (h === 9 ? 7 : 0)),
+    newVisitors: 0,
+    returningVisitors: 0,
+    entries: [],
+    edges: [],
     prev: { views: 6, uniques: 6, topPages: [{ key: "/old-post", count: 5 }], topReferrers: [] },
     receiving: true,
     ...over,
@@ -164,6 +172,46 @@ describe("countryLabel", () => {
   it("renders flag + English name, and degrades to flag + code for unknown regions", () => {
     expect(countryLabel("IT")).toBe("🇮🇹 Italy");
     expect(countryLabel("DE")).toBe("🇩🇪 Germany");
+  });
+});
+
+/**
+ * The §6b baseline selector: 1–7 days ONLY, plain-language trade-off at the point of
+ * choice (rule 4), and the save goes through the clamping settings API.
+ */
+describe("SaltWindowCard — the returning-visitor recognition window", () => {
+  it("offers exactly 1–7 days, never more (the consent-free ceiling)", () => {
+    render(<SaltWindowCard site={site} />);
+    const options = screen.getAllByRole("option").map((o) => (o as HTMLOptionElement).value);
+    expect(options).toEqual(["1", "2", "3", "4", "5", "6", "7"]);
+  });
+
+  it("states the trade in plain words when a longer window is picked", async () => {
+    const user = userEvent.setup();
+    const { container } = render(<SaltWindowCard site={site} />);
+    await user.selectOptions(screen.getByRole("combobox"), "7");
+    const text = container.textContent ?? "";
+    expect(text).toMatch(/returning within a week/i);
+    expect(text).toMatch(/up to 7 days, on your responsibility/i);
+    // The two promises that never bend, right at the point of choice.
+    expect(text).toMatch(/stored on the visitor's device/i);
+    expect(text).toMatch(/GPC\/DNT\) are never counted/i);
+  });
+
+  it("saves through the settings API and reflects the server's clamped answer", async () => {
+    const user = userEvent.setup();
+    mocked.updateSiteSettings.mockResolvedValue({ saltDays: 7 });
+    render(<SaltWindowCard site={site} />);
+    await user.selectOptions(screen.getByRole("combobox"), "7");
+    await user.click(screen.getByRole("button", { name: /save/i }));
+    await waitFor(() => expect(mocked.updateSiteSettings).toHaveBeenCalledWith("s1", { saltDays: 7 }));
+    // Saved: the button disappears until the choice changes again.
+    await waitFor(() => expect(screen.queryByRole("button", { name: /save/i })).not.toBeInTheDocument());
+  });
+
+  it("explains that a 1-day window cannot see returns, instead of showing hollow zeros", () => {
+    render(<SaltWindowCard site={site} />);
+    expect(screen.getByText(/returning visitors can't be measured/i)).toBeInTheDocument();
   });
 });
 

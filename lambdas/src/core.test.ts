@@ -184,3 +184,46 @@ describe("counterKeys — the rows one pageview increments (DESIGN.md §2)", () 
     expect(counterKeys(direct, "2026-07-18").map((k) => k.sk)).not.toContain("ref#");
   });
 });
+
+/**
+ * Traffic flow (§7d): the "money flow" view runs on AGGREGATE counts only. An event is
+ * either an ENTRY (from a source) or an internal STEP (page→page) — never both — and no
+ * row ever carries a visitor, a session, or a chain longer than one adjacent pair.
+ */
+describe("traffic-flow counters — aggregate edges, never a visitor trail", () => {
+  const keys = (raw: Parameters<typeof normalize>[0]) =>
+    counterKeys(normalize(raw, { doNotTrack: false })!, "2026-08-04").map((k) => k.sk);
+
+  it("counts an external arrival as an entry from the referrer HOSTNAME (invariant intact)", () => {
+    expect(keys({ s: "s1", p: "/pricing", r: "https://t.co/abc?tok=SECRET", w: 1 })).toContain(
+      "entry#t.co#/pricing",
+    );
+  });
+
+  it("counts a no-referrer arrival as a direct entry", () => {
+    expect(keys({ s: "s1", p: "/", w: 1 })).toContain("entry#direct#/");
+  });
+
+  it("counts an internal step as a page→page edge, and NOT as an entry", () => {
+    const sks = keys({ s: "s1", p: "/pricing", v: "/features", w: 1 });
+    expect(sks).toContain("edge#/features#/pricing");
+    expect(sks.filter((s) => s.startsWith("entry#"))).toEqual([]);
+  });
+
+  it("a reload is not a transition — same prev and current path falls back to an entry", () => {
+    const sks = keys({ s: "s1", p: "/x", v: "/x", w: 1 });
+    expect(sks.filter((s) => s.startsWith("edge#"))).toEqual([]);
+    expect(sks).toContain("entry#direct#/x");
+  });
+
+  it("an external referrer wins over a stray prev path — an event is entry OR step, never both", () => {
+    const sks = keys({ s: "s1", p: "/b", r: "https://news.ycombinator.com/item", v: "/a", w: 1 });
+    expect(sks).toContain("entry#news.ycombinator.com#/b");
+    expect(sks.filter((s) => s.startsWith("edge#"))).toEqual([]);
+  });
+
+  it("prev path gets the same reduction as path — junk and embedded queries can't reach a key", () => {
+    const sks = keys({ s: "s1", p: "/b", v: "/a?email=x@y.z#frag", w: 1 });
+    expect(sks).toContain("edge#/a#/b");
+  });
+});

@@ -38,6 +38,16 @@ describe("t.js — the script that runs on the visitor's page", () => {
     expect(script).toMatch(/popstate/);
   });
 
+  it("sends a same-site referrer as a PATH step (v), never as a referrer (r)", () => {
+    // Traffic flow (§7d): internal navigation is an edge count. The browser is the only
+    // party that knows the site's own host (many sites share one collector), so the
+    // entry-vs-step split happens here: same-site referrer ⇒ its path rides v and r is
+    // emptied; external referrer rides r untouched (the server reduces it to hostname).
+    expect(script).toMatch(/ru\.host===w\.location\.host/);
+    expect(script).toMatch(/prev=ru\.pathname;r=""/);
+    expect(script).toMatch(/if\(prev\)\{body\.v=prev;\}else\{body\.r=r;\}/);
+  });
+
   it("sends ONLY simple requests — no typed Blob, no json content-type, ever", () => {
     // Live ollydigital.com lesson: sendBeacon is always credentials-include, so a Blob
     // typed application/json forces a credentialed CORS preflight that fails against the

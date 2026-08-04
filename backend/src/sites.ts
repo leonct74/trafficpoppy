@@ -10,6 +10,7 @@ import {
   DeleteItemCommand,
   PutItemCommand,
   QueryCommand,
+  UpdateItemCommand,
   type DynamoDBClient,
 } from "@aws-sdk/client-dynamodb";
 import { randomBytes } from "node:crypto";
@@ -20,6 +21,18 @@ export interface Site {
   name: string;
   domain: string;
   createdAt: string;
+  /** The §6b baseline salt window in days (1–7). Absent ⇒ 1 (today's behavior). */
+  saltDays?: number;
+}
+
+/** The §6b consent-free ceiling — mirrors lambdas/src/ingest.ts, which also clamps. */
+export const MAX_SALT_DAYS = 7;
+
+/** Clamp an owner-supplied salt window to 1–7 whole days. */
+export function clampSaltDays(n: unknown): number {
+  const v = Math.floor(Number(n));
+  if (!Number.isFinite(v)) return 1;
+  return Math.min(MAX_SALT_DAYS, Math.max(1, v));
 }
 
 const SITES_PK = "sites";
@@ -64,9 +77,33 @@ export class SiteRegistry {
         name: it.name?.S ?? "",
         domain: it.domain?.S ?? "",
         createdAt: it.createdAt?.S ?? "",
+        saltDays: it.saltDays?.N ? clampSaltDays(it.saltDays.N) : undefined,
       }))
       .filter((s) => s.id)
       .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  }
+
+  /**
+   * Set the site's salt window (§6b baseline). Clamped to 1–7 days HERE as well as in the
+   * collector — no stored value may ever exceed the consent-free ceiling. Setting 1 removes
+   * the attribute (1 is the default; an absent attribute keeps old rows byte-identical).
+   */
+  async setSaltDays(id: string, saltDays: unknown): Promise<number> {
+    const days = clampSaltDays(saltDays);
+    await this.db.send(
+      new UpdateItemCommand({
+        TableName: this.tableName,
+        Key: { pk: { S: SITES_PK }, sk: { S: siteSk(id) } },
+        ConditionExpression: "attribute_exists(sk)", // no ghost rows for deleted sites
+        ...(days === 1
+          ? { UpdateExpression: "REMOVE saltDays" }
+          : {
+              UpdateExpression: "SET saltDays = :d",
+              ExpressionAttributeValues: { ":d": { N: String(days) } },
+            }),
+      }),
+    );
+    return days;
   }
 
   async create(input: { name: string; domain: string }, id = newSiteId()): Promise<Site> {
