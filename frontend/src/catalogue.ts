@@ -29,7 +29,7 @@ export const SITE_FIELDS: SetupField[] = [
     key: "domain",
     label: "Website address",
     explain:
-      "The site's own address, without https:// — it's what decides whether True Reach can serve " +
+      "The site's own address, without https:// — it's what decides whether the Online Dashboard can serve " +
       "first-party for this site, so a bare registrable domain is the useful answer.",
     placeholder: "ollydigital.com",
     required: false,
@@ -51,16 +51,17 @@ export const SNIPPET_STEP = {
 
 /** The premium option (DESIGN.md §12). Rendered by TrueReach.tsx, described by the prompt. */
 export const TRUE_REACH = {
-  label: "True Reach — your own domain",
+  label: "Online Dashboard — your statistics on your own address",
   pitch:
-    "Collect on a subdomain of your own site instead of the AWS address: ad blockers stop hiding " +
-    "your visitors, and you get country statistics — both need your own domain.",
+    "Put your statistics page on your own address (stats.your-site.com) — open it from any " +
+    "browser and share it with your team or clients. Collection moves to your subdomain too, " +
+    "so ad blockers can't hide your visitors — and you see visitor countries.",
   caution:
     "You'll be asked to add two DNS records at your domain host. AWS-side cost: cents — " +
     "CloudFront's free tier covers typical sites.",
   /** Honest scoping — one custom subdomain is first-party for ONE registrable domain (§14, 2026-07-25). */
   scope:
-    "A True Reach subdomain is first-party only for its own registrable domain: stats.example.com " +
+    "A custom subdomain is first-party only for its own registrable domain: stats.example.com " +
     "makes example.com ad-blocker-immune and nothing else. Other sites stay on the free tier.",
   freeTierNote: "Free tier — served from your AWS address.",
 };
@@ -71,7 +72,7 @@ export const COLLECTED = [
   "the referrer HOSTNAME only — never the full URL, because query strings can carry emails and tokens",
   "the campaign tags utm_source, utm_medium and utm_campaign — exactly those three, everything else dropped",
   "a viewport size bucket, and a coarse browser + operating-system family",
-  "with True Reach only: the visitor's country",
+  "with the Online Dashboard tier only: the visitor's country",
 ];
 
 /** The privacy invariants (DESIGN.md §3, §4, §6; enforced in lambdas/src/core.ts and pinned by
@@ -92,9 +93,10 @@ export const PRIVACY_PROMISES = [
   {
     label: "No visitor identifiers at rest",
     what:
-      "A daily counting hash is salted with a random value that is rotated and destroyed every 24 " +
-      "hours, so yesterday's visitors are permanently unlinkable to today's. Cross-day and cross-site " +
-      "tracking are cryptographically impossible, not merely disallowed.",
+      "A counting hash is salted with a random value that is rotated and destroyed on a schedule the " +
+      "owner controls — every 24 hours by default, at most every 7 days. Once a window's salt is " +
+      "destroyed, its visitors are permanently unlinkable to later ones. Tracking beyond the window, " +
+      "and across sites, is cryptographically impossible, not merely disallowed.",
   },
   {
     label: '"Unique visitors" means DAILY uniques',

@@ -28,7 +28,7 @@ type Phase = "loading" | "gate" | "ready";
 const SECTIONS = [
   { key: "sites", label: "Your sites" },
   { key: "team", label: "Team access" },
-  { key: "reach", label: "True Reach" },
+  { key: "reach", label: "Online dashboard" },
 ] as const;
 type SectionKey = (typeof SECTIONS)[number]["key"];
 

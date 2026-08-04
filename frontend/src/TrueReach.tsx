@@ -106,7 +106,7 @@ export function TrueReach(props: { suggestedDomain?: string; onStatus?: (edges: 
             disabled={!addTarget || !entitlement.entitled}
             onClick={addDomain}
           >
-            Set up True Reach
+            Set up your domain
           </Button>
         </div>
         {addTarget && !entitlement.entitled && (
@@ -115,8 +115,9 @@ export function TrueReach(props: { suggestedDomain?: string; onStatus?: (edges: 
             target={addTarget}
             pitch={
               <>
-                <strong>Ad blockers are hiding some of your visitors.</strong> Collecting on your own
-                subdomain makes them countable again — and unlocks country statistics.
+                <strong>Your statistics page, on your own address</strong> — open and share it from any
+                browser. And ad blockers stop hiding your visitors: collecting on your own subdomain
+                makes them countable again, with visitor countries included.
               </>
             }
           />
@@ -224,7 +225,7 @@ function EdgeDomain(props: { edge: EdgeStatus; onChanged: () => Promise<unknown>
       {edge.phase === "ready" && edge.updateAvailable && (
         <div className="banner info stack" style={{ gap: 10 }}>
           <div>
-            <strong>An update is ready for True Reach.</strong> It puts your statistics page on this
+            <strong>An update is ready for your custom domain.</strong> It puts your statistics page on this
             domain too — browsing <span className="mono">https://{edge.domain}</span> will show your
             dashboard instead of an error page. Collection keeps running while it applies, and your
             DNS records don't change.
@@ -235,7 +236,7 @@ function EdgeDomain(props: { edge: EdgeStatus; onChanged: () => Promise<unknown>
               busyLabel="Updating…"
               onClick={() => act(() => api.edgeUpdate(edge.domain!))}
             >
-              Update True Reach
+              Update now
             </Button>
           </div>
         </div>

@@ -42,7 +42,7 @@ describe("useEntitlement", () => {
   it("asks the host per DOMAIN — one paid unit is one domain (§12)", async () => {
     renderHook(() => useEntitlement("ollydigital.com"));
     await waitFor(() =>
-      expect(mocked.isPurchased).toHaveBeenCalledWith("true-reach", { target: "ollydigital.com" }),
+      expect(mocked.isPurchased).toHaveBeenCalledWith("online-dashboard", { target: "ollydigital.com" }),
     );
   });
 
@@ -128,7 +128,7 @@ describe("Purchase surface", () => {
     render(<Purchase entitlement={e} target="ollydigital.com" pitch="why" />);
 
     await user.click(screen.getByRole("button", { name: /unlock/i }));
-    await waitFor(() => expect(mocked.buyProduct).toHaveBeenCalledWith("true-reach", { target: "ollydigital.com" }));
+    await waitFor(() => expect(mocked.buyProduct).toHaveBeenCalledWith("online-dashboard", { target: "ollydigital.com" }));
     await waitFor(() => expect(e.refresh).toHaveBeenCalled());
   });
 

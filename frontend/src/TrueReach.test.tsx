@@ -48,11 +48,16 @@ describe("TrueReach card", () => {
   it("pitches the tier and takes a hostname when nothing is deployed", async () => {
     mocked.edgeStatus.mockResolvedValue({ edges: [] });
     render(<TrueReach suggestedDomain="stats.ollydigital.com" />);
-    expect(await screen.findByText(/country statistics/i)).toBeInTheDocument();
+    // The pitch leads with the MAIN benefit (your stats page on your own address,
+    // shareable from any browser) and only then the ad-blocker recovery.
+    const pitch = await screen.findByText(/statistics page on your own address/i);
+    expect(pitch.textContent!.indexOf("your own address")).toBeLessThan(
+      pitch.textContent!.indexOf("ad blockers"),
+    );
     expect(screen.getByPlaceholderText("stats.ollydigital.com")).toBeInTheDocument();
 
     mocked.edgeDeploy.mockResolvedValue({ operation: "CREATE" });
-    await userEvent.click(screen.getByRole("button", { name: /set up true reach/i }));
+    await userEvent.click(screen.getByRole("button", { name: /set up your domain/i }));
     await waitFor(() => expect(mocked.edgeDeploy).toHaveBeenCalledWith("stats.ollydigital.com"));
   });
 
@@ -108,7 +113,7 @@ describe("the paid gate (§12 — per domain)", () => {
 
     render(<TrueReach suggestedDomain="stats.ollydigital.com" />);
 
-    const btn = await screen.findByRole("button", { name: /set up true reach/i });
+    const btn = await screen.findByRole("button", { name: /set up your domain/i });
     await waitFor(() => expect(btn).toBeDisabled());
     expect(mocked.edgeDeploy).not.toHaveBeenCalled();
   });
@@ -143,7 +148,7 @@ describe("the paid gate (§12 — per domain)", () => {
     });
     render(<TrueReach />);
 
-    const btn = await screen.findByRole("button", { name: /update true reach/i });
+    const btn = await screen.findByRole("button", { name: /update now/i });
     expect(mocked.edgeUpdate).not.toHaveBeenCalled(); // detection alone must not touch AWS
     // After the update applies, the refresh re-reads the (now current) live state.
     mocked.edgeStatus.mockResolvedValue({
@@ -153,7 +158,7 @@ describe("the paid gate (§12 — per domain)", () => {
     await waitFor(() => expect(mocked.edgeUpdate).toHaveBeenCalledWith("stats.ollydigital.com"));
     // The card re-renders from the returned state: page now on the domain, banner gone.
     expect(await screen.findByText(/open the statistics page at/i)).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /update true reach/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /update now/i })).not.toBeInTheDocument();
   });
 
   it("shows the statistics-page address once the dashboard rides the domain", async () => {

@@ -113,7 +113,7 @@ describe("the section tabs", () => {
   it("shows all three sections as tabs, with sites first", async () => {
     await openApp();
     const tabs = screen.getAllByRole("tab");
-    expect(tabs.map((t) => t.textContent)).toEqual(["Your sites", "Team access", "True Reach"]);
+    expect(tabs.map((t) => t.textContent)).toEqual(["Your sites", "Team access", "Online dashboard"]);
     expect(tabs[0]).toHaveAttribute("aria-selected", "true");
   });
 

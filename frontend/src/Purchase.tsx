@@ -1,7 +1,7 @@
 import { Button } from "./Button";
 import { formatPrice } from "./entitlement";
 import type { Entitlement } from "./entitlement";
-import { host, TRUE_REACH_PRODUCT } from "./host";
+import { host, ONLINE_DASHBOARD_PRODUCT } from "./host";
 
 /**
  * The purchase surface for a paid feature (DESIGN.md §12).
@@ -21,7 +21,7 @@ export function Purchase(props: {
   productId?: string;
 }) {
   const { entitlement, target } = props;
-  const productId = props.productId ?? TRUE_REACH_PRODUCT;
+  const productId = props.productId ?? ONLINE_DASHBOARD_PRODUCT;
   const price = formatPrice(entitlement.info);
 
   if (entitlement.entitled === undefined) {

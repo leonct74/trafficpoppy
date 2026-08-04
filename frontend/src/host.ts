@@ -89,4 +89,4 @@ export interface PurchaseInfo {
 }
 
 /** The product id priced in the developer dashboard (§12). One paid unit = one domain. */
-export const TRUE_REACH_PRODUCT = "true-reach";
+export const ONLINE_DASHBOARD_PRODUCT = "online-dashboard";
