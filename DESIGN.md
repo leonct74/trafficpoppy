@@ -913,3 +913,15 @@ materializes.
   copy still claimed a fixed 24-hour salt — now owner-controlled, 24 h default, 7-day max
   (§6b). Internal identifiers (routes, component names, `TRUE_REACH` consts) keep the old
   name deliberately. 328 tests green.
+- 2026-08-04 — **Final naming + shape of the paid tier: "Advanced Stats", one tab, team
+  access inside the paywall** (three founder decisions in sequence). (1) Tier renamed
+  once more, Online Dashboard → **Advanced Stats** (product id **`advanced-stats`** —
+  still nothing created in /admin, so id churn stays free); the founder's benefit order
+  is pinned in the pitch (share online first, ad-block second, countries third).
+  (2) **Team access joined the paywall**: the invite flow exists only once ≥1 domain has
+  the tier — "otherwise they activate a service they cannot use." Deliberate exception:
+  existing viewers stay listed and REMOVABLE with no active tier (a lapsed subscription
+  must never lock the owner out of revoking access; test-pinned). (3) The two paid
+  surfaces (domain setup + team access) merged into ONE **"Advanced stats" tab** — one
+  product behind one name; tabs are now Your sites / Advanced stats. The viewer page's
+  gated empty state says the same name. 332 tests green.

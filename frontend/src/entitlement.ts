@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { host, ONLINE_DASHBOARD_PRODUCT, type PurchaseInfo } from "./host";
+import { host, ADVANCED_STATS_PRODUCT, type PurchaseInfo } from "./host";
 
 /**
  * Entitlement for a paid feature (DESIGN.md §12) — one paid unit is ONE DOMAIN, so every
@@ -21,7 +21,7 @@ export interface Entitlement {
   manage: () => Promise<void>;
 }
 
-export function useEntitlement(target: string | undefined, productId = ONLINE_DASHBOARD_PRODUCT): Entitlement {
+export function useEntitlement(target: string | undefined, productId = ADVANCED_STATS_PRODUCT): Entitlement {
   const [entitled, setEntitled] = useState<boolean | undefined>(undefined);
   const [info, setInfo] = useState<PurchaseInfo | null>(null);
 

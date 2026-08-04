@@ -185,7 +185,7 @@ function renderSites(){
     // Honest empty states: "not shared with you" and "not part of the plan" are
     // different situations and must not wear the same sentence.
     $("sites").innerHTML=gated
-      ?'<p class="mut">The online dashboard is part of the Online Dashboard upgrade, which isn\\'t set up yet. The site owner can turn it on from the TrafficPoppy app.</p>'
+      ?'<p class="mut">This online dashboard is part of the Advanced Stats upgrade, which isn\\'t set up yet. The site owner can turn it on from the TrafficPoppy app.</p>'
       :'<p class="mut">No sites have been shared with you yet.</p>';
     return}
   $("sites").innerHTML=sites.map(function(s,i){

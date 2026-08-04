@@ -18,17 +18,17 @@ const POLL_MS = 5_000;
 type Phase = "loading" | "gate" | "ready";
 
 /**
- * The three sections of the ready screen. Founder feedback (2026-08-04): with several
- * sites configured, "Team access" and "True Reach" ended up below the fold and were
- * effectively invisible — tabs make every section one visible click away (the
- * "visible navigation" rule). The panels stay MOUNTED on inactive tabs: True Reach's
- * polling feeds the per-site snippet origins, and unmounting it would freeze a
- * DNS-validation flow the moment the user peeked at another tab.
+ * The ready screen's sections. Founder feedback (2026-08-04): with several sites
+ * configured, extra cards ended up below the fold and were effectively invisible — tabs
+ * make every section one visible click away (the "visible navigation" rule). Later the
+ * same day: the paid surfaces (domain setup + team access) merged into ONE "Advanced
+ * stats" tab — they are one product, so they live behind one name. The inactive panel
+ * stays MOUNTED: the edge polling feeds the per-site snippet origins, and unmounting it
+ * would freeze a DNS-validation flow the moment the user peeked at another tab.
  */
 const SECTIONS = [
   { key: "sites", label: "Your sites" },
-  { key: "team", label: "Team access" },
-  { key: "reach", label: "Online dashboard" },
+  { key: "advanced", label: "Advanced stats" },
 ] as const;
 type SectionKey = (typeof SECTIONS)[number]["key"];
 
@@ -284,9 +284,12 @@ export function App() {
               />
             )}
           </div>
-          <div hidden={section !== "team"}>
+          {/* One paid product, one tab: domain setup first (it unlocks everything below),
+              then who can open the resulting page. */}
+          <div hidden={section !== "advanced"}>
+            <TrueReach onStatus={setEdgeState} />
             <Viewers
-              // The Online Dashboard gate: hand out a link only when the paid tier exists.
+              // The Advanced Stats gate: hand out a link only when the paid tier exists.
               // Prefer the memorable address; the raw AWS URL only bridges an edge that
               // hasn't taken the viewer-routing update yet. No edge ⇒ no link (the panel
               // explains the upgrade instead).
@@ -298,9 +301,6 @@ export function App() {
               canManage={!!status?.viewerUserPoolId}
               onlineActive={edgeState.some((e) => e.phase === "ready")}
             />
-          </div>
-          <div hidden={section !== "reach"}>
-            <TrueReach onStatus={setEdgeState} />
           </div>
         </>
       )}

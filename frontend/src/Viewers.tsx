@@ -107,9 +107,9 @@ export function Viewers(props: {
         // of the paid tier. Invites still work now — the dashboard lights up when a domain
         // is set up in the Online dashboard tab.
         <div className="banner info">
-          The browser dashboard is part of the <strong>Online Dashboard</strong> upgrade. Set up a domain in
-          the Online dashboard tab and everyone you invite here can open the statistics from any browser or
-          phone — sites without the upgrade stay visible in this app only.
+          The browser dashboard is part of the <strong>Advanced Stats</strong> upgrade. Set up a domain above
+          and everyone you invite here can open the statistics from any browser or phone — sites without
+          the upgrade stay visible in this app only.
         </div>
       )}
 

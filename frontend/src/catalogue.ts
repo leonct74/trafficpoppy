@@ -29,7 +29,7 @@ export const SITE_FIELDS: SetupField[] = [
     key: "domain",
     label: "Website address",
     explain:
-      "The site's own address, without https:// — it's what decides whether the Online Dashboard can serve " +
+      "The site's own address, without https:// — it's what decides whether Advanced Stats can serve " +
       "first-party for this site, so a bare registrable domain is the useful answer.",
     placeholder: "ollydigital.com",
     required: false,
@@ -51,11 +51,12 @@ export const SNIPPET_STEP = {
 
 /** The premium option (DESIGN.md §12). Rendered by TrueReach.tsx, described by the prompt. */
 export const TRUE_REACH = {
-  label: "Online Dashboard — your statistics on your own address",
+  label: "Advanced Stats — your statistics online, on your own address",
   pitch:
     "Put your statistics page on your own address (stats.your-site.com) — open it from any " +
-    "browser and share it with your team or clients. Collection moves to your subdomain too, " +
-    "so ad blockers can't hide your visitors — and you see visitor countries.",
+    "browser and share it with your team — invite them, control who sees which site. Collection " +
+    "moves to your subdomain too, so ad blockers can't hide your visitors — and you see " +
+    "visitor countries.",
   caution:
     "You'll be asked to add two DNS records at your domain host. AWS-side cost: cents — " +
     "CloudFront's free tier covers typical sites.",
@@ -74,7 +75,7 @@ export const COLLECTED = [
   "the referrer HOSTNAME only — never the full URL, because query strings can carry emails and tokens",
   "the campaign tags utm_source, utm_medium and utm_campaign — exactly those three, everything else dropped",
   "a viewport size bucket, and a coarse browser + operating-system family",
-  "with the Online Dashboard tier only: the visitor's country",
+  "with Advanced Stats only: the visitor's country",
 ];
 
 /** The privacy invariants (DESIGN.md §3, §4, §6; enforced in lambdas/src/core.ts and pinned by

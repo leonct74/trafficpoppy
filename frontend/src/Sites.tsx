@@ -197,7 +197,7 @@ function SiteRow(props: {
           {site.domain && <span className="muted mono" style={{ fontSize: 12 }}>{site.domain}</span>}{" "}
           {firstParty && (
             <span className="badge ok" title={`First-party via ${trueReachDomain}`}>
-              Online Dashboard
+              Advanced Stats
             </span>
           )}
         </div>
@@ -229,7 +229,7 @@ function SiteRow(props: {
           </p>
         ) : canUpsell ? (
           <p className="muted" style={{ margin: "6px 0 0", fontSize: 12 }}>
-            {TRUE_REACH.freeTierNote} Set up the Online Dashboard on a subdomain of{" "}
+            {TRUE_REACH.freeTierNote} Set up Advanced Stats on a subdomain of{" "}
             <span className="mono">{site.domain || "this site"}</span> for ad-blocker-immune collection and country
             stats.
           </p>

@@ -110,19 +110,19 @@ describe("the section tabs", () => {
     await screen.findByText(/TrafficPoppy is set up/i);
   };
 
-  it("shows all three sections as tabs, with sites first", async () => {
+  it("shows the two sections as tabs, with sites first (paid surfaces share one tab)", async () => {
     await openApp();
     const tabs = screen.getAllByRole("tab");
-    expect(tabs.map((t) => t.textContent)).toEqual(["Your sites", "Team access", "Online dashboard"]);
+    expect(tabs.map((t) => t.textContent)).toEqual(["Your sites", "Advanced stats"]);
     expect(tabs[0]).toHaveAttribute("aria-selected", "true");
   });
 
-  it("hides Team access and True Reach until their tab is picked", async () => {
+  it("hides the Advanced stats surfaces until their tab is picked", async () => {
     await openApp();
     // hidden: true reaches into the hidden panel — visible queries must NOT find it.
     expect(screen.queryByRole("heading", { name: /Team access/i })).not.toBeInTheDocument();
     expect(screen.getByRole("heading", { name: /Team access/i, hidden: true })).not.toBeVisible();
-    await userEvent.setup().click(screen.getByRole("tab", { name: /Team access/i }));
+    await userEvent.setup().click(screen.getByRole("tab", { name: /Advanced stats/i }));
     expect(screen.getByRole("heading", { name: /Team access/i })).toBeVisible();
   });
 

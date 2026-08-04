@@ -61,7 +61,7 @@ describe("Sites screen", () => {
       '<script defer src="https://abc123.lambda-url.eu-west-1.on.aws/t.js" data-site="mail"></script>',
     );
     // and the True Reach badge appears once (only the matching site)
-    expect(screen.getAllByText("Online Dashboard")).toHaveLength(1);
+    expect(screen.getAllByText("Advanced Stats")).toHaveLength(1);
   });
 
   it("isFirstPartyFor matches a subdomain of the site's own domain, nothing else", () => {

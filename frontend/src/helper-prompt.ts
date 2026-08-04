@@ -30,10 +30,10 @@ export function buildHelperPrompt(opts: { collectorUrl: string; trueReachDomain?
   );
 
   const trueReachState = opts.trueReachDomain
-    ? `The Online Dashboard is ALREADY LIVE on ${opts.trueReachDomain} for its own domain. ${TRUE_REACH.scope}`
-    : `The Online Dashboard is NOT set up yet. ${TRUE_REACH.pitch}`;
+    ? `Advanced Stats is ALREADY LIVE on ${opts.trueReachDomain} for its own domain. ${TRUE_REACH.scope}`
+    : `Advanced Stats is NOT set up yet. ${TRUE_REACH.pitch}`;
 
-  return `You are helping me set up website statistics in TrafficPoppy — privacy-first web analytics that runs entirely inside my own AWS account, with no cookies and no consent banner. I will describe my website and what I want to learn from it, in my own words. Your job: tell me exactly what to enter in TrafficPoppy's "Add a site" form, where to paste the snippet, and whether the Online Dashboard upgrade is worth it for me. If my description is ambiguous or missing something important, ask me at most three short questions first.
+  return `You are helping me set up website statistics in TrafficPoppy — privacy-first web analytics that runs entirely inside my own AWS account, with no cookies and no consent banner. I will describe my website and what I want to learn from it, in my own words. Your job: tell me exactly what to enter in TrafficPoppy's "Add a site" form, where to paste the snippet, and whether the Advanced Stats upgrade is worth it for me. If my description is ambiguous or missing something important, ask me at most three short questions first.
 
 THE FORM I WILL FILL IN — "Add a site":
 ${fieldLines}
@@ -66,7 +66,7 @@ ANSWER IN EXACTLY THIS SHAPE:
 1. Name: … (one line why)
 2. Website address: …
 3. Where to paste the snippet: … (the exact file or screen for my setup, and how to check it worked)
-4. Online Dashboard: "yes — because …" or "not yet — the free tier covers this because …"
+4. Advanced Stats: "yes — because …" or "not yet — the free tier covers this because …"
 5. What I'll be able to see: … (the numbers that answer what I said I wanted, named as the dashboard names them)
 6. What TrafficPoppy will NOT collect: … (the short honest version, in plain words I could paste into my own privacy page)
 7. Anything I asked for that this tool can't do: … with the closest aggregate alternative, or "nothing"
