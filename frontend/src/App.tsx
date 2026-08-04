@@ -220,6 +220,25 @@ export function App() {
               <strong>Running in your own AWS in {status?.region}.</strong> Serverless, so you're billed only
               for what you actually collect — cents a month at typical traffic, nothing when nobody visits.
             </div>
+
+            {/* A newer version of TrafficPoppy ships changes the deployed stack doesn't have
+                yet. The backend has reported this since P1 (`updateAvailable`) but nothing
+                rendered it, so the only way to notice was the technical details panel —
+                which meant new features looked broken rather than pending. */}
+            {status?.updateAvailable && (
+              <div className="banner info stack" style={{ gap: 10 }}>
+                <div>
+                  <strong>An update is ready for your AWS setup.</strong> This version of TrafficPoppy adds
+                  things your deployment doesn't have yet. Your data and your tracking snippets are
+                  untouched — collection keeps running while it applies.
+                </div>
+                <div>
+                  <Button className="btn btn-primary btn-sm" busyLabel="Updating…" onClick={deploy}>
+                    Update now
+                  </Button>
+                </div>
+              </div>
+            )}
           </div>
           {status?.collectorUrl && (
             <Sites
