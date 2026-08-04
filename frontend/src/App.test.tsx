@@ -96,3 +96,40 @@ describe("the update banner", () => {
     expect(screen.queryByRole("button", { name: /update now/i })).not.toBeInTheDocument();
   });
 });
+
+/**
+ * Founder feedback 2026-08-04: with several sites configured, Team access and True Reach
+ * sat below the fold and were "almost invisible". The ready screen is now tabbed — but the
+ * inactive panels must stay MOUNTED (hidden, not removed): True Reach's polling feeds the
+ * per-site snippet origins, and unmounting mid-DNS-validation would freeze that flow.
+ */
+describe("the section tabs", () => {
+  const openApp = async () => {
+    mocked.status.mockResolvedValue(ready());
+    render(<App />);
+    await screen.findByText(/TrafficPoppy is set up/i);
+  };
+
+  it("shows all three sections as tabs, with sites first", async () => {
+    await openApp();
+    const tabs = screen.getAllByRole("tab");
+    expect(tabs.map((t) => t.textContent)).toEqual(["Your sites", "Team access", "True Reach"]);
+    expect(tabs[0]).toHaveAttribute("aria-selected", "true");
+  });
+
+  it("hides Team access and True Reach until their tab is picked", async () => {
+    await openApp();
+    // hidden: true reaches into the hidden panel — visible queries must NOT find it.
+    expect(screen.queryByRole("heading", { name: /Team access/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /Team access/i, hidden: true })).not.toBeVisible();
+    await userEvent.setup().click(screen.getByRole("tab", { name: /Team access/i }));
+    expect(screen.getByRole("heading", { name: /Team access/i })).toBeVisible();
+  });
+
+  it("keeps inactive panels MOUNTED so True Reach polling survives tab switches", async () => {
+    await openApp();
+    // Never unmounted: the edge status was fetched even though the tab wasn't opened.
+    await waitFor(() => expect(mocked.edgeStatus).toHaveBeenCalled());
+    expect(screen.getByRole("heading", { name: /Team access/i, hidden: true })).toBeInTheDocument();
+  });
+});

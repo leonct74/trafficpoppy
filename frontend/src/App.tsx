@@ -17,6 +17,21 @@ const POLL_MS = 5_000;
 
 type Phase = "loading" | "gate" | "ready";
 
+/**
+ * The three sections of the ready screen. Founder feedback (2026-08-04): with several
+ * sites configured, "Team access" and "True Reach" ended up below the fold and were
+ * effectively invisible — tabs make every section one visible click away (the
+ * "visible navigation" rule). The panels stay MOUNTED on inactive tabs: True Reach's
+ * polling feeds the per-site snippet origins, and unmounting it would freeze a
+ * DNS-validation flow the moment the user peeked at another tab.
+ */
+const SECTIONS = [
+  { key: "sites", label: "Your sites" },
+  { key: "team", label: "Team access" },
+  { key: "reach", label: "True Reach" },
+] as const;
+type SectionKey = (typeof SECTIONS)[number]["key"];
+
 export function App() {
   const [phase, setPhase] = useState<Phase>("loading");
   const [access, setAccess] = useState<AccessState>("pending");
@@ -30,6 +45,7 @@ export function App() {
   const [integrating, setIntegrating] = useState(false);
   /** The True Reach edge state — when ready, snippets serve from the custom domain. */
   const [edgeState, setEdgeState] = useState<EdgeStatus | null>(null);
+  const [section, setSection] = useState<SectionKey>("sites");
   const pollRef = useRef<number | null>(null);
 
   /**
@@ -240,19 +256,38 @@ export function App() {
               </div>
             )}
           </div>
-          {status?.collectorUrl && (
-            <Sites
-              // Every site's snippet defaults to the AWS Function URL. True Reach is
-              // per-domain: a custom subdomain (stats.ollydigital.com) is first-party for
-              // ONLY its own registrable domain, so Sites applies it per-site — never as a
-              // blanket origin for every site (that would point one site at another's domain).
-              collectorUrl={status.collectorUrl}
-              trueReachDomain={edgeState?.phase === "ready" ? edgeState.domain : undefined}
-              onOpen={setOpenSite}
-            />
-          )}
-          <Viewers viewerUrl={status?.viewerUrl} canManage={!!status?.viewerUserPoolId} />
-          <TrueReach onStatus={setEdgeState} />
+          <div className="tabs" role="tablist" aria-label="TrafficPoppy sections" style={{ marginBottom: 14 }}>
+            {SECTIONS.map((s) => (
+              <button
+                key={s.key}
+                role="tab"
+                aria-selected={section === s.key}
+                className={`tab${section === s.key ? " active" : ""}`}
+                onClick={() => setSection(s.key)}
+              >
+                {s.label}
+              </button>
+            ))}
+          </div>
+          <div hidden={section !== "sites"}>
+            {status?.collectorUrl && (
+              <Sites
+                // Every site's snippet defaults to the AWS Function URL. True Reach is
+                // per-domain: a custom subdomain (stats.ollydigital.com) is first-party for
+                // ONLY its own registrable domain, so Sites applies it per-site — never as a
+                // blanket origin for every site (that would point one site at another's domain).
+                collectorUrl={status.collectorUrl}
+                trueReachDomain={edgeState?.phase === "ready" ? edgeState.domain : undefined}
+                onOpen={setOpenSite}
+              />
+            )}
+          </div>
+          <div hidden={section !== "team"}>
+            <Viewers viewerUrl={status?.viewerUrl} canManage={!!status?.viewerUserPoolId} />
+          </div>
+          <div hidden={section !== "reach"}>
+            <TrueReach onStatus={setEdgeState} />
+          </div>
         </>
       )}
 
