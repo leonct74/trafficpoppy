@@ -308,7 +308,9 @@ function flowSvg(r){
       +'<text x="'+(anchor==="end"?x-14:x+14)+'" y="'+(n.y+n.h/2+3)+'" text-anchor="'+anchor+'" style="font-size:11px;fill:var(--fg)">'+esc(label)+' <tspan style="fill:var(--mut)">'+nfmt(n.c)+"</tspan></text>";
   }
   // Ribbons: proportionally slice each node's height across its links, in rank order.
-  function ribbons(links,from,to,fx,tx){
+  // Colour carries direction (founder feedback): GREEN = traffic coming in,
+  // RED = traffic going onward / leaving.
+  function ribbons(links,from,to,fx,tx,color){
     var used={},usedT={};
     return links.map(function(l){
       var f=null,t=null,i;
@@ -321,7 +323,7 @@ function flowSvg(r){
       var mx=(fx+tx)/2;
       return '<path d="M'+fx+","+fy+" C"+mx+","+fy+" "+mx+","+ty+" "+tx+","+ty
         +" L"+tx+","+(ty+tShare)+" C"+mx+","+(ty+tShare)+" "+mx+","+(fy+fShare)+" "+fx+","+(fy+fShare)
-        +' Z" fill="var(--acc)" opacity="0.25"><title>'+esc(l.f)+" → "+esc(l.t.replace(/^→ /,""))+" — "+nfmt(l.c)+"</title></path>";
+        +' Z" fill="'+color+'" opacity="0.3"><title>'+esc(l.f)+" → "+esc(l.t.replace(/^→ /,""))+" — "+nfmt(l.c)+"</title></path>";
     }).join("");
   }
   var inLinks=entries.filter(function(e){return pageSet[e.path]}).map(function(e){return{f:e.source,t:e.path,c:e.count}});
@@ -330,7 +332,7 @@ function flowSvg(r){
   pages.forEach(function(p){var ex=Math.max(0,p.c-(outSum[p.k]||0));if(ex>0&&destSet["left the site"])outLinks.push({f:p.k,t:"left the site",c:ex})});
 
   return '<svg viewBox="0 0 '+W+" "+H+'" style="width:100%;height:auto">'
-    +ribbons(inLinks,L,M,x1+8,x2)+ribbons(outLinks,M,R,x3,x4-8)
+    +ribbons(inLinks,L,M,x1+8,x2,"var(--ok)")+ribbons(outLinks,M,R,x3,x4-8,"#ff7b72")
     +L.map(function(n){return node(n,x1,"end",n.k==="direct"?"direct / typed in":n.k)}).join("")
     +M.map(function(n){return node(n,x2,"start",n.k)}).join("")
     +R.map(function(n){return node(n,x4,"end",n.k.replace(/^→ /,""))}).join("")
@@ -423,7 +425,7 @@ function renderDetail(r,live){
   var trend=trendSvg(r);
   if(trend)html+='<div class="card"><h2>'+((r.days||[]).length<=1?"Views by hour (UTC)":"Views & visitors by day")+"</h2>"+trend+"</div>";
   var flow=flowSvg(r);
-  if(flow)html+='<div class="card"><h2>Traffic flow — in, through, and out</h2>'+flow+'<p class="mut" style="margin:8px 0 0">Where visits enter, the pages they move through, and where they leave. Counts, never individual visitors.</p></div>';
+  if(flow)html+='<div class="card"><h2>Traffic flow — in, through, and out</h2>'+flow+'<p class="mut" style="margin:8px 0 0"><span style="color:var(--ok)">■</span> traffic coming in · <span style="color:#ff7b72">■</span> traffic going on or leaving. Counts, never individual visitors.</p></div>';
 
   var mv=movers(r.topPages,p.topPages);
   if(mv)html+='<div class="card"><h2>Top movers vs the previous period</h2>'+mv.map(function(m){

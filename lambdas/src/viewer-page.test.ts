@@ -62,6 +62,13 @@ describe("dashboard v2 — professional and fully self-contained", () => {
     expect(page).toContain("never individual visitors");
   });
 
+  it("colours flow direction: green ribbons in, red ribbons out (founder feedback)", () => {
+    expect(page).toContain('x2,"var(--ok)")'); // inbound ribbons
+    expect(page).toContain('x4-8,"#ff7b72")'); // outbound/leaving ribbons
+    expect(page).toContain("traffic coming in"); // and the legend says so in words
+    expect(page).toContain("going on or leaving");
+  });
+
   it("shows new vs returning and pages-per-visit KPIs", () => {
     expect(page).toContain("New visitors");
     expect(page).toContain("Returning");
