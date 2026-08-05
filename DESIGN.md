@@ -1041,6 +1041,15 @@ materializes.
   widen it. Removal moved into a 5th tab, **deliberately unlocked** — "you can always
   remove everything" is a platform promise that outranks the paywall, and burying it
   inside a paid tab would have broken it for free-tier users.
+- 2026-08-05 — **Packaged for the catalogue on the SHARED runtime (rule R1).** The SEA
+  sidecar is retired as a shipping artifact: `backend/index.cjs` (esbuild → CJS, built by
+  `scripts/build-backend.mjs`) plus `"runtime": "node22"` in the manifest's backend block.
+  The platform provides Node. Result: **2.7 MB, one platform-neutral "any" package**
+  instead of 114 MB darwin + 89 MB win32 — and the darwin/win32 cross-build machinery is
+  no longer needed for releases. R1 forbids third-party runtimes and service binaries,
+  not the poppy's own artifacts, so the embedded CloudFormation template + collector zip
+  are untouched (and so is the stale-build trap: rebuild + full restart after any infra
+  change). `minHost` is **0.3.0** — the host release that carries the shared runtime.
 - 2026-08-05 — **Backup's gate corrected: the SUBSCRIPTION, not the deployed edge**
   (founder: "even if I unlock 3 domains subscriptions, I can only backup
   ollydigital.com"). The first cut derived everything from the cert registry, which meant

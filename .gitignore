@@ -4,6 +4,7 @@ build/
 release/
 backend/build/
 backend/trafficpoppy-sidecar*
+backend/index.cjs
 *.exe
 *.tsbuildinfo
 .DS_Store
