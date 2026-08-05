@@ -109,6 +109,15 @@ export function Sites(props: { collectorUrl: string; trueReachDomains?: string[]
     void load();
   }, [load]);
 
+  // A restore (Back up tab) changes the site list under our feet, and inactive tabs stay
+  // mounted — without this, restored sites (and the duplicate-merge banner) only appear
+  // after a full app restart (founder 2026-08-06: "if I restore, the banner doesn't appear").
+  useEffect(() => {
+    const onRestored = () => void load();
+    document.addEventListener("tp:data-restored", onRestored);
+    return () => document.removeEventListener("tp:data-restored", onRestored);
+  }, [load]);
+
   const add = async () => {
     setErr(null);
     try {

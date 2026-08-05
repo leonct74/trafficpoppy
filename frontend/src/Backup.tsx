@@ -217,6 +217,9 @@ export function Backup(props: {
                       setSaved(null);
                       try {
                         setRestored(await api.restore(b.path));
+                        // Tabs stay mounted (deliberately — polling must survive tab
+                        // switches), so "Your sites" won't reload by itself. Tell it.
+                        document.dispatchEvent(new CustomEvent("tp:data-restored"));
                         setConfirming(null);
                       } catch (e) {
                         setErr((e as Error).message);

@@ -128,3 +128,16 @@ describe("two records for the same website", () => {
     expect(screen.queryByText(/listed twice/i)).not.toBeInTheDocument();
   });
 });
+
+describe("restore → sites reload (tabs stay mounted)", () => {
+  it("re-reads the site list when the Back up tab announces a restore", async () => {
+    mocked.listSites.mockResolvedValue({ sites: [] });
+    render(<Sites collectorUrl={URL} />);
+    await screen.findByText(/paste into its pages/i);
+    expect(mocked.listSites).toHaveBeenCalledTimes(1);
+
+    // What Backup.tsx dispatches after a successful restore.
+    document.dispatchEvent(new CustomEvent("tp:data-restored"));
+    await waitFor(() => expect(mocked.listSites).toHaveBeenCalledTimes(2));
+  });
+});
