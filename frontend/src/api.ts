@@ -53,7 +53,13 @@ export const api = {
 
   /** Back up & restore: statistics to/from a local JSON file (sidecar writes it —
    *  sandboxed frontends cannot download). Scanning a big table can take a while. */
-  backup: (): Promise<{ path: string; rows: number; sites: number; counters: number }> =>
+  backup: (): Promise<{
+    path: string;
+    rows: number;
+    sites: number;
+    counters: number;
+    skippedSites: string[];
+  }> =>
     host.invokeBackend({ method: "POST", path: "/backup" }, 5 * 60_000),
   listBackups: (): Promise<{ backups: { path: string; date: string; bytes: number }[] }> =>
     host.invokeBackend({ method: "GET", path: "/backups" }),

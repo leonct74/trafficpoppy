@@ -35,9 +35,11 @@ describe("keepRow — what a backup may contain", () => {
 });
 
 describe("createBackup", () => {
+  const site = (id: string, domain: string) => row("sites", `site#${id}`, { domain: { S: domain } });
+
   it("scans every page, filters through the whitelist, and writes one deterministic file per day", async () => {
     const pages = [
-      { Items: [row("sites", "site#a"), row("salt", "2026-08-05")], LastEvaluatedKey: { pk: { S: "x" } } },
+      { Items: [site("a", "ollydigital.com"), row("salt", "2026-08-05")], LastEvaluatedKey: { pk: { S: "x" } } },
       { Items: [row("site#a#day#2026-08-04", "total#views", { views: { N: "12" } }), row("site#a#uniq#2026-08-04", "h1")] },
     ];
     let call = 0;
@@ -45,9 +47,9 @@ describe("createBackup", () => {
 
     const dir = mkdtempSync(join(tmpdir(), "tp-backup-"));
     const now = new Date("2026-08-05T10:00:00Z");
-    const summary = await createBackup(db, "TrafficPoppyTable", { dir, now });
+    const summary = await createBackup(db, "TrafficPoppyTable", ["stats.ollydigital.com"], { dir, now });
 
-    expect(summary).toMatchObject({ rows: 2, sites: 1, counters: 1 });
+    expect(summary).toMatchObject({ rows: 2, sites: 1, counters: 1, skippedSites: [] });
     expect(summary.path).toBe(join(dir, "TrafficPoppy-backup-2026-08-05.json"));
     const body = JSON.parse(await readFile(summary.path, "utf8"));
     expect(body.version).toBe(1);
@@ -57,6 +59,47 @@ describe("createBackup", () => {
     // And nothing sensitive slipped in.
     expect(JSON.stringify(body)).not.toContain("uniq");
     expect(JSON.stringify(body)).not.toContain('"salt"');
+  });
+
+  /**
+   * PAID PER SITE (founder decision 2026-08-05): a backup covers only unlocked sites —
+   * same rule as the online dashboard. The gate is these onlineDomains, derived
+   * server-side from the cert registry; nothing the frontend says can widen it.
+   */
+  it("includes ONLY sites whose domain is unlocked — counters follow their site", async () => {
+    const db = {
+      send: vi.fn().mockResolvedValue({
+        Items: [
+          site("a", "ollydigital.com"), // unlocked
+          site("b", "other-site.com"), // free tier
+          row("site#a#day#2026-08-04", "total#views", { views: { N: "12" } }),
+          row("site#b#day#2026-08-04", "total#views", { views: { N: "99" } }),
+        ],
+      }),
+    } as unknown as DynamoDBClient;
+
+    const dir = mkdtempSync(join(tmpdir(), "tp-gate-"));
+    const summary = await createBackup(db, "T", ["stats.ollydigital.com"], {
+      dir,
+      now: new Date("2026-08-05T10:00:00Z"),
+    });
+
+    expect(summary).toMatchObject({ sites: 1, counters: 1 });
+    // The excluded site is NAMED so the UI can warn — never a silent omission.
+    expect(summary.skippedSites).toEqual(["other-site.com"]);
+    const body = await readFile(summary.path, "utf8");
+    expect(body).toContain("ollydigital.com");
+    expect(body).not.toContain("other-site.com");
+    expect(body).not.toContain('"99"'); // the free site's numbers never leave the table
+  });
+
+  it("with nothing unlocked, backs up nothing and says which sites were skipped", async () => {
+    const db = {
+      send: vi.fn().mockResolvedValue({ Items: [site("a", "ollydigital.com"), row("site#a#day#2026-08-04", "total#views")] }),
+    } as unknown as DynamoDBClient;
+    const dir = mkdtempSync(join(tmpdir(), "tp-none-"));
+    const summary = await createBackup(db, "T", [], { dir, now: new Date("2026-08-05T10:00:00Z") });
+    expect(summary).toMatchObject({ rows: 0, sites: 0, counters: 0, skippedSites: ["ollydigital.com"] });
   });
 });
 

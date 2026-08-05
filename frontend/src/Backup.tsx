@@ -11,7 +11,13 @@ import { CopyButton } from "./CopyButton";
  */
 export function Backup() {
   const [backups, setBackups] = useState<{ path: string; date: string; bytes: number }[]>([]);
-  const [saved, setSaved] = useState<{ path: string; rows: number; sites: number; counters: number } | null>(null);
+  const [saved, setSaved] = useState<{
+    path: string;
+    rows: number;
+    sites: number;
+    counters: number;
+    skippedSites: string[];
+  } | null>(null);
   const [restored, setRestored] = useState<number | null>(null);
   const [confirming, setConfirming] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -34,9 +40,10 @@ export function Backup() {
         Back up &amp; restore
       </h2>
       <p className="muted" style={{ margin: 0, fontSize: 12 }}>
-        A backup file keeps your sites and every collected number, so statistics survive a full
-        removal and return after a fresh setup. It never contains anything about individual
-        visitors — there is nothing of that kind to back up.
+        A backup file keeps your numbers, so statistics survive a full removal and return after a
+        fresh setup. Like the online dashboard, it covers the sites you've unlocked with Advanced
+        Stats — one per site. It never contains anything about individual visitors: there is
+        nothing of that kind to back up.
       </p>
 
       {err && <div className="banner err">{err}</div>}
@@ -69,6 +76,18 @@ export function Backup() {
           <div className="row" style={{ gap: 8 }}>
             <code className="chip" style={{ flex: 1, overflowX: "auto", whiteSpace: "nowrap" }}>{saved.path}</code>
             <CopyButton text={saved.path} label="Path" />
+          </div>
+        </div>
+      )}
+
+      {/* Never a silent omission: a site left out of a backup must be NAMED, or its owner
+          discovers the gap after a teardown, when it's too late. */}
+      {saved && saved.skippedSites.length > 0 && (
+        <div className="banner err stack" style={{ gap: 6 }}>
+          <div>
+            <strong>Not in this backup:</strong> {saved.skippedSites.join(", ")}. These sites don't have
+            Advanced Stats, so their numbers stay only in your table — a removal would take them with
+            it. Unlock a site in the Advanced stats tab to include it.
           </div>
         </div>
       )}

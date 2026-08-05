@@ -25,7 +25,7 @@ import { readBootstrap, brokerCredentialsProvider } from "./boot";
 import { deploy, getStatus, teardown, tableName, type AwsCtx } from "./stack";
 import { ViewerDirectory } from "./viewers";
 import { CognitoIdentityProviderClient } from "@aws-sdk/client-cognito-identity-provider";
-import { deployEdge, edgeStatusAll, removeEdge, updateEdge, type CertStore, type EdgeCtx } from "./edge";
+import { deployEdge, edgeStatusAll, listEdges, removeEdge, updateEdge, type CertStore, type EdgeCtx } from "./edge";
 import { DeleteItemCommand, PutItemCommand, QueryCommand } from "@aws-sdk/client-dynamodb";
 import { SiteRegistry, lastDays } from "./sites";
 import { createBackup, listBackups, restoreBackup } from "./backup";
@@ -367,8 +367,11 @@ const server = createServer(async (req, res) => {
     // Back up & restore (2026-08-05): the statistics leave the table as a local JSON file
     // before a teardown, and come back into a fresh one. The sidecar writes the file —
     // frontends are sandboxed and cannot download (platform rule).
+    // Paid per site, exactly like the online dashboard: the gate is the deployed edge
+    // domains, read here from the cert registry — never a filter the frontend supplies.
     if (parts[0] === "backup" && parts.length === 1 && method === "POST") {
-      return json(res, 200, await createBackup(db, tableName));
+      const onlineDomains = (await listEdges(edge)).map((e) => e.domain);
+      return json(res, 200, await createBackup(db, tableName, onlineDomains));
     }
     if (parts[0] === "backups" && parts.length === 1 && method === "GET") {
       return json(res, 200, { backups: await listBackups() });

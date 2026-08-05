@@ -1020,3 +1020,14 @@ materializes.
   nothing while locked. Supersedes §12's free-teardown-export line (amended in place):
   no lock-in is preserved because the data stays in the owner's table with a documented
   schema — the paid part is the one-click convenience.
+- 2026-08-05 — **Backups are gated PER SITE, not per account (founder: "unlocked by
+  domain, similarly to the advanced stats… to prevent users from downloading the dataset
+  and building their own online stats").** A backup contains only sites whose domain is
+  unlocked; their counters follow. The gate is derived in the sidecar from the deployed
+  edge domains — the same source the viewer Lambda's online gate reads — so it can't be
+  widened by anything the frontend sends (MailPoppy isolation lesson). Excluded sites are
+  returned in `skippedSites` and NAMED in the card ("Not in this backup: …, a removal
+  would take them with it"): a silent omission would be discovered only after a teardown,
+  which is the one moment it cannot be fixed. The founder's own framing stands — a
+  determined owner can always read their own table; the tier sells convenience, not
+  access.

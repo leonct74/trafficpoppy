@@ -25,12 +25,33 @@ describe("Back up & restore", () => {
     expect(await screen.findByText(/never contains anything about individual visitors/i)).toBeInTheDocument();
   });
 
+  it("says the paid rule: a backup covers the sites unlocked with Advanced Stats", async () => {
+    render(<Backup />);
+    expect(await screen.findByText(/covers the sites you've unlocked with Advanced/i)).toBeInTheDocument();
+  });
+
+  it("NAMES any site left out — a silent omission would be found only after a teardown", async () => {
+    mocked.backup.mockResolvedValue({
+      path: "/x/TrafficPoppy-backup-2026-08-05.json",
+      rows: 10,
+      sites: 1,
+      counters: 9,
+      skippedSites: ["other-site.com", "third.com"],
+    });
+    render(<Backup />);
+    await userEvent.click(await screen.findByRole("button", { name: /back up all statistics now/i }));
+    expect(await screen.findByText(/Not in this backup:/i)).toBeInTheDocument();
+    expect(screen.getByText(/other-site\.com, third\.com/)).toBeInTheDocument();
+    expect(screen.getByText(/a removal would take them with it/i)).toBeInTheDocument();
+  });
+
   it("backs up on click and shows the saved path with a copy button", async () => {
     mocked.backup.mockResolvedValue({
       path: "/Users/x/Documents/TrafficPoppy-backup-2026-08-05.json",
       rows: 43,
       sites: 1,
       counters: 42,
+      skippedSites: [],
     });
     render(<Backup />);
     await userEvent.click(await screen.findByRole("button", { name: /back up all statistics now/i }));

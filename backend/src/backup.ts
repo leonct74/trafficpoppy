@@ -1,10 +1,17 @@
-// Back up & restore the owner's statistics — the "teardown export" DESIGN.md §12 promises
-// as part of the free core. Born 2026-08-05 for the certify run: certification is a real
-// teardown, and teardown deletes the table, so the numbers must be able to leave first.
+// Back up & restore the owner's statistics. Born 2026-08-05 for the certify run:
+// certification is a real teardown, and teardown deletes the table, so the numbers must
+// be able to leave first.
+//
+// PAID, PER SITE (founder decision 2026-08-05, same shape as Advanced Stats): a backup
+// covers only sites whose own domain is unlocked. The gate is derived HERE, server-side,
+// from the deployed edge domains — the same source the viewer Lambda's online gate reads
+// — never from anything the frontend sends (MailPoppy lesson: isolation comes from
+// verified state). Excluded sites are REPORTED back so the UI can name them: a backup
+// that silently skipped sites would be a data-loss surprise at teardown time.
 //
 // WHAT A BACKUP KEEPS, AND WHAT IT NEVER CONTAINS (privacy invariants, DESIGN.md §2):
-//   kept    — the site registry (ids intact, so existing snippets keep working after a
-//             restore) and every aggregate day counter.
+//   kept    — the unlocked sites' registry rows (ids intact, so existing snippets keep
+//             working after a restore) and their aggregate day counters.
 //   skipped — the salt (regenerated fresh), the salted visitor-hash rows (they die with
 //             the table BY DESIGN; after a restore, returning visitors count as new once
 //             per window — the honest price), the 30-minute live ticker, and the True
@@ -22,6 +29,7 @@ import {
   type DynamoDBClient,
   type AttributeValue,
 } from "@aws-sdk/client-dynamodb";
+import { isFirstPartyFor } from "../../shared/src/first-party";
 
 export interface BackupSummary {
   path: string;
@@ -29,6 +37,8 @@ export interface BackupSummary {
   /** Row count per family, so the UI can say what was kept in plain words. */
   sites: number;
   counters: number;
+  /** Sites left out because their domain has no Advanced Stats — named in the UI. */
+  skippedSites: string[];
 }
 
 export interface BackupFileInfo {
@@ -61,35 +71,58 @@ export function keepRow(row: Row): "site" | "counter" | null {
   return null; // salt, uniq#, recent, truereach/cert#, and anything not yet classified
 }
 
+/** The site id a counter row belongs to: pk is `site#<id>#day#<YYYY-MM-DD>`. */
+export function counterSiteId(pk: string): string {
+  return pk.slice("site#".length, pk.indexOf("#day#"));
+}
+
+/**
+ * @param onlineDomains the deployed edge domains (the paid gate) — a site is included
+ *        only when one of them is, or is under, the site's own domain.
+ */
 export async function createBackup(
   db: DynamoDBClient,
   tableName: string,
+  onlineDomains: string[],
   opts?: { dir?: string; now?: Date },
 ): Promise<BackupSummary> {
-  const rows: Row[] = [];
-  let sites = 0;
-  let counters = 0;
+  // Pass 1: read everything the whitelist allows, remembering which site each row is for.
+  const siteRows: { row: Row; id: string; domain: string }[] = [];
+  const counterRows: { row: Row; siteId: string }[] = [];
   let startKey: Row | undefined;
   do {
     const page = await db.send(
       new ScanCommand({ TableName: tableName, ExclusiveStartKey: startKey }),
     );
     for (const item of page.Items ?? []) {
-      const kind = keepRow(item as Row);
-      if (!kind) continue;
-      if (kind === "site") sites += 1;
-      else counters += 1;
-      rows.push(item as Row);
+      const row = item as Row;
+      const kind = keepRow(row);
+      if (kind === "site") {
+        siteRows.push({
+          row,
+          id: (row.sk?.S ?? "").slice("site#".length),
+          domain: row.domain?.S ?? "",
+        });
+      } else if (kind === "counter") {
+        counterRows.push({ row, siteId: counterSiteId(row.pk?.S ?? "") });
+      }
     }
     startKey = page.LastEvaluatedKey as Row | undefined;
   } while (startKey);
+
+  // Pass 2: the paid gate, applied to sites and then inherited by their counters.
+  const included = siteRows.filter((s) => onlineDomains.some((d) => isFirstPartyFor(s.domain, d)));
+  const includedIds = new Set(included.map((s) => s.id));
+  const skippedSites = siteRows.filter((s) => !includedIds.has(s.id)).map((s) => s.domain || s.id);
+  const counters = counterRows.filter((c) => includedIds.has(c.siteId));
+  const rows: Row[] = [...included.map((s) => s.row), ...counters.map((c) => c.row)];
 
   const now = opts?.now ?? new Date();
   const today = now.toISOString().slice(0, 10);
   const path = backupPath(opts?.dir ?? defaultBackupDir(), today);
   const body = { version: 1, exportedAt: now.toISOString(), table: tableName, rows };
   await writeFile(path, JSON.stringify(body), "utf8");
-  return { path, rows: rows.length, sites, counters };
+  return { path, rows: rows.length, sites: included.length, counters: counters.length, skippedSites };
 }
 
 export async function listBackups(dir = defaultBackupDir()): Promise<BackupFileInfo[]> {
