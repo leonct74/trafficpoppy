@@ -990,3 +990,10 @@ materializes.
   one-dashboard rule up top once a page is live: every address serves the same dashboard,
   one login lists every unlocked site — ten sites never mean ten pages (founder concern,
   answered in-UI). Helper prompt + catalogue scope rewritten to match.
+- 2026-08-05 — **Subscription-lapse handling (the last §12 gap before catalogue).** When
+  the platform answers "no active subscription" under either key for a site with a live
+  edge, the row shows a lapse notice: subscription ended, page and collection still
+  running in YOUR AWS, renew (checkout for the site's domain) or remove (data stays,
+  collection falls back to the AWS address). Deliberately no automatic teardown and no
+  server-side cut-off: the stack is the owner's infrastructure, and the poppy never
+  deletes resources on a billing signal — enforcement is the visible nag, v1 by design.

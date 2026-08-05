@@ -183,6 +183,46 @@ describe("the paid gate (§12 — per site, keyed on the site's domain)", () => 
   });
 });
 
+describe("subscription lapse (§12): notice + renew, never a silent teardown", () => {
+  beforeEach(async () => {
+    const { host } = await import("./host");
+    // The platform answers: no active subscription under EITHER key.
+    (host.isPurchased as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(false);
+    mocked.edgeStatus.mockResolvedValue({
+      edges: [edge({ phase: "ready", domain: "stats.ollydigital.com" })],
+    });
+  });
+
+  it("says the subscription ended and offers the two real options: renew or remove", async () => {
+    render(<TrueReach />);
+    expect(await screen.findByText(/subscription for ollydigital\.com has ended/i)).toBeInTheDocument();
+    // Data safety is stated at the decision point, not discovered after.
+    expect(screen.getByText(/every number you've collected stays/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /renew/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^remove$/i })).toBeInTheDocument();
+    // The edge itself keeps running — lapse must NEVER touch the owner's AWS by itself.
+    expect(screen.getByText(/^live$/i)).toBeInTheDocument();
+  });
+
+  it("Renew opens checkout for the SITE's domain (the post-08-05 key)", async () => {
+    const { host } = await import("./host");
+    (host.buyProduct as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
+    render(<TrueReach />);
+    await userEvent.click(await screen.findByRole("button", { name: /renew/i }));
+    await waitFor(() =>
+      expect(host.buyProduct).toHaveBeenCalledWith(expect.any(String), { target: "ollydigital.com" }),
+    );
+  });
+
+  it("shows no lapse notice while the subscription is in good standing", async () => {
+    const { host } = await import("./host");
+    (host.isPurchased as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(true);
+    render(<TrueReach />);
+    expect(await screen.findByText(/^live$/i)).toBeInTheDocument();
+    expect(screen.queryByText(/has ended/i)).not.toBeInTheDocument();
+  });
+});
+
 describe("the live edge lifecycle (unchanged by site-first)", () => {
   it("shows the validation record with copy buttons while ACM waits (resumable by design)", async () => {
     mocked.edgeStatus.mockResolvedValue({

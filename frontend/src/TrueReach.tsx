@@ -4,6 +4,7 @@ import { Button } from "./Button";
 import { CopyButton } from "./CopyButton";
 import { TRUE_REACH } from "./catalogue";
 import { useEntitlement, type Entitlement } from "./entitlement";
+import { host, ADVANCED_STATS_PRODUCT } from "./host";
 import { isFirstPartyFor } from "../../shared/src/first-party";
 import { Purchase } from "./Purchase";
 import type { EdgeStatus, Site } from "./types";
@@ -146,7 +147,41 @@ function SiteRow(props: {
   const legacy = useEntitlement(edge?.domain);
   const owned: Entitlement | null = entitlement.entitled ? entitlement : legacy.entitled ? legacy : null;
 
-  if (edge) return <EdgeCard edge={edge} entitlement={owned} onChanged={props.onChanged} onError={props.onError} />;
+  if (edge) {
+    // Lapse handling (§12): the platform says the subscription ended, but the edge is
+    // still running in the owner's AWS. We never tear anything down by ourselves —
+    // that's the owner's infrastructure — so the honest move is a visible notice with
+    // the two real options: renew, or remove the address (data is kept either way).
+    // Both checks must have ANSWERED false — while loading, assume good standing.
+    const lapsed = entitlement.entitled === false && legacy.entitled === false;
+    return (
+      <div className="stack" style={{ gap: 8 }}>
+        {lapsed && (
+          <div className="banner err stack" style={{ gap: 10 }}>
+            <div>
+              <strong>The subscription for {siteDomain} has ended.</strong> Its statistics page and
+              first-party collection are still running in your AWS. Renew to keep them — or remove the
+              address below: every number you've collected stays, and collection falls back to your
+              AWS address.
+            </div>
+            <div>
+              <Button
+                className="btn btn-primary btn-sm"
+                busyLabel="Opening checkout…"
+                onClick={async () => {
+                  await host.buyProduct(ADVANCED_STATS_PRODUCT, { target: siteDomain });
+                  await entitlement.refresh();
+                }}
+              >
+                Renew
+              </Button>
+            </div>
+          </div>
+        )}
+        <EdgeCard edge={edge} entitlement={owned} onChanged={props.onChanged} onError={props.onError} />
+      </div>
+    );
+  }
 
   // "www" would collide with the website itself; empty is not an address.
   const cleanPrefix = prefix.trim().toLowerCase();
