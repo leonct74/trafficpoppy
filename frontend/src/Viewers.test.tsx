@@ -66,6 +66,29 @@ describe("the team list", () => {
     expect(screen.queryByPlaceholderText(/colleague@example.com/i)).not.toBeInTheDocument();
   });
 
+  it("the site picker says which sites actually appear online — grants aren't purchases", async () => {
+    // a.com has Advanced Stats; b.com doesn't. Granting b.com is allowed (it lights up
+    // when its domain upgrades) but must be labeled, or the grant looks like paid access.
+    const user = userEvent.setup();
+    render(<Viewers canManage onlineActive onlineDomains={["stats.a.com"]} />);
+    await user.type(await screen.findByPlaceholderText(/colleague@example.com/i), "x@x.com");
+    await user.click(screen.getByLabelText(/Only the sites I pick/i));
+
+    expect(await screen.findByText("online")).toBeInTheDocument();
+    expect(screen.getByText("not online yet")).toBeInTheDocument();
+    expect(screen.getByText(/cost nothing until then/i)).toBeInTheDocument();
+  });
+
+  it("with every site online, the picker stays clean — no rule lecture when it can't confuse", async () => {
+    const user = userEvent.setup();
+    render(<Viewers canManage onlineActive onlineDomains={["stats.a.com", "stats.b.com"]} />);
+    await user.type(await screen.findByPlaceholderText(/colleague@example.com/i), "x@x.com");
+    await user.click(screen.getByLabelText(/Only the sites I pick/i));
+
+    expect(screen.getAllByText("online")).toHaveLength(2);
+    expect(screen.queryByText(/cost nothing until then/i)).not.toBeInTheDocument();
+  });
+
   it("a lapsed tier still lets the owner MANAGE existing viewers — just not invite new ones", async () => {
     mocked.listViewers.mockResolvedValue({
       viewers: [{ email: "old@x.com", status: "CONFIRMED", allSites: true, siteIds: [] }],

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { api } from "./api";
 import { Button } from "./Button";
 import { CopyButton } from "./CopyButton";
+import { isFirstPartyFor } from "../../shared/src/first-party";
 import type { Site, Viewer } from "./types";
 
 /**
@@ -24,6 +25,8 @@ export function Viewers(props: {
    * lock the owner out of REMOVING people.
    */
   onlineActive?: boolean;
+  /** The live Advanced Stats domains — used to mark which sites actually appear online. */
+  onlineDomains?: string[];
 }) {
   const [sites, setSites] = useState<Site[]>([]);
   const [viewers, setViewers] = useState<Viewer[] | null>(null);
@@ -81,6 +84,9 @@ export function Viewers(props: {
   const toggleSite = (id: string) =>
     setSiteIds((cur) => (cur.includes(id) ? cur.filter((s) => s !== id) : [...cur, id]));
 
+  // The SAME rule the viewer Lambda enforces server-side — the picker only explains it.
+  const isOnline = (site: Site) => (props.onlineDomains ?? []).some((d) => isFirstPartyFor(site.domain, d));
+
   return (
     <div className="card stack">
       <div className="spread">
@@ -134,7 +140,7 @@ export function Viewers(props: {
       ) : (
         <div className="stack">
           {viewers.map((v) => (
-            <ViewerRow key={v.email} viewer={v} sites={sites} onChanged={load} />
+            <ViewerRow key={v.email} viewer={v} sites={sites} onChanged={load} isOnline={isOnline} />
           ))}
         </div>
       )}
@@ -163,6 +169,7 @@ export function Viewers(props: {
             siteIds={siteIds}
             onAllSites={setAllSites}
             onToggle={toggleSite}
+            isOnline={isOnline}
           />
           <div>
             <Button
@@ -180,7 +187,12 @@ export function Viewers(props: {
   );
 }
 
-function ViewerRow(props: { viewer: Viewer; sites: Site[]; onChanged: () => void }) {
+function ViewerRow(props: {
+  viewer: Viewer;
+  sites: Site[];
+  onChanged: () => void;
+  isOnline?: (site: Site) => boolean;
+}) {
   const { viewer, sites } = props;
   const [editing, setEditing] = useState(false);
   const [allSites, setAllSites] = useState(viewer.allSites);
@@ -221,6 +233,7 @@ function ViewerRow(props: { viewer: Viewer; sites: Site[]; onChanged: () => void
             allSites={allSites}
             siteIds={siteIds}
             onAllSites={setAllSites}
+            isOnline={props.isOnline}
             onToggle={(id) => setSiteIds((c) => (c.includes(id) ? c.filter((s) => s !== id) : [...c, id]))}
           />
           <div className="row">
@@ -285,12 +298,26 @@ function SitePicker(props: {
   siteIds: string[];
   onAllSites: (v: boolean) => void;
   onToggle: (id: string) => void;
+  /** Predicate: is this site's domain covered by an Advanced Stats subscription? */
+  isOnline?: (site: Site) => boolean;
 }) {
+  const isOnline = props.isOnline ?? (() => true);
+  const offlineCount = props.sites.filter((s) => !isOnline(s)).length;
   return (
     <div className="stack" style={{ gap: 6 }}>
       <div className="section-title" style={{ margin: 0 }}>
         What they can see
       </div>
+      {/* Access is a GRANT; the subscription decides what actually appears. Say the rule
+          once, where the choice is made — granting an offline site felt like paying for
+          nothing (founder feedback 2026-08-04). */}
+      {offlineCount > 0 && (
+        <p className="muted" style={{ margin: 0, fontSize: 12 }}>
+          People only ever see sites whose domain has Advanced Stats. You can still grant the
+          others now — they appear to your team automatically the moment their domain is upgraded,
+          and cost nothing until then.
+        </p>
+      )}
       <label className="row" style={{ gap: 8 }}>
         <input type="radio" checked={props.allSites} onChange={() => props.onAllSites(true)} />
         <span>
@@ -316,7 +343,16 @@ function SitePicker(props: {
                   onChange={() => props.onToggle(s.id)}
                 />
                 <span>
-                  {s.name} <span className="muted mono" style={{ fontSize: 12 }}>{s.domain}</span>
+                  {s.name} <span className="muted mono" style={{ fontSize: 12 }}>{s.domain}</span>{" "}
+                  {isOnline(s) ? (
+                    <span className="badge ok" style={{ fontSize: 10 }}>
+                      online
+                    </span>
+                  ) : (
+                    <span className="badge" style={{ fontSize: 10 }} title="Visible to your team once this domain has Advanced Stats">
+                      not online yet
+                    </span>
+                  )}
                 </span>
               </label>
             ))

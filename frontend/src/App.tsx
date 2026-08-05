@@ -357,6 +357,7 @@ export function App() {
               })()}
               canManage={!!status?.viewerUserPoolId}
               onlineActive={onlineActive}
+              onlineDomains={edgeState.filter((e) => e.phase === "ready" && e.domain).map((e) => e.domain!)}
             />
           </div>
         </>
