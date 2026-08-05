@@ -925,6 +925,17 @@ materializes.
   surfaces (domain setup + team access) merged into ONE **"Advanced stats" tab** — one
   product behind one name; tabs are now Your sites / Advanced stats. The viewer page's
   gated empty state says the same name. 332 tests green.
+- 2026-08-04 — **Checkout live-verified to the Stripe page (founder; purchase deliberately
+  not completed).** The full commercial chain now works: TrafficPoppy registered as
+  first-party in the commerce plane (0%, `agentspoppy-web` `fee.ts`), product
+  `advanced-stats` created in /admin ($9.99/year, 15-day trial — founder will tune the
+  price; changes affect new checkouts only), the app's purchase card reads the live price
+  (yearly shown as its monthly equivalent + "billed yearly · $9.99, after the free trial"
+  + trial badge — the documented MailPoppy display rule, now in `displayPrice()`), and
+  Unlock opens Stripe checkout with the domain as target. Entitlement API answers
+  per-domain. Still to verify with a real purchase: entitlement flip + edge deploy under
+  a live subscription. Also: the Team access site picker now badges each site
+  online / not-online-yet with the grant-vs-purchase rule stated at the point of choice.
 - 2026-08-04 — **Tab merge REVERTED (founder: "I lead you to the wrong direction").**
   Granting people all-domain access inside the purchase surface muddled both jobs. Final
   shape: **three tabs — Your sites / Advanced stats / Team access** (team on the right),
