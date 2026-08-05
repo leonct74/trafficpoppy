@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import { createBackup, keepRow, listBackups, restoreBackup } from "./backup";
+import { createBackup, keepRow, listBackups, mergeSites, restoreBackup } from "./backup";
 import type { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 
 const row = (pk: string, sk: string, extra: Record<string, unknown> = {}) =>
@@ -199,6 +199,59 @@ describe("restoreBackup", () => {
     const bad = join(dir, "TrafficPoppy-backup-2026-08-05.json");
     writeFileSync(bad, JSON.stringify({ nonsense: true }));
     await expect(restoreBackup(db, "T", bad)).rejects.toThrow(/not a readable/i);
+    expect(db.send).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Founder 2026-08-05, after the rebuild: three websites each had two records — one with
+ * the restored history, one receiving the live traffic — and neither could be deleted
+ * without losing real numbers. Merging is arithmetic on the `count` attribute, into the
+ * id the website's tag already carries.
+ */
+describe("mergeSites", () => {
+  const counter = (siteId: string, day: string, sk: string, count: number) =>
+    row(`site#${siteId}#day#${day}`, sk, { count: { N: String(count) } });
+
+  it("adds every counter into the target day and clears the source, site row last", async () => {
+    const seen: { name: string; input: any }[] = [];
+    let drained = false;
+    const db = {
+      send: vi.fn().mockImplementation((cmd: any) => {
+        const name = cmd.constructor.name;
+        seen.push({ name, input: cmd.input });
+        if (name === "ScanCommand") {
+          if (drained) return Promise.resolve({ Items: [] });
+          drained = true;
+          return Promise.resolve({
+            Items: [counter("old", "2026-07-01", "total#views", 12), counter("old", "2026-07-01", "page#/", 5)],
+          });
+        }
+        return Promise.resolve({});
+      }),
+    } as unknown as DynamoDBClient;
+
+    const r = await mergeSites(db, "T", "old", "new");
+    expect(r).toEqual({ movedRows: 2, days: 1 });
+
+    const adds = seen.filter((c) => c.name === "UpdateItemCommand");
+    expect(adds).toHaveLength(2);
+    // ADD, never overwrite — a day present on both sides ends up with the sum.
+    expect(adds[0]!.input.UpdateExpression).toBe("ADD #c :n");
+    expect(adds[0]!.input.Key.pk.S).toBe("site#new#day#2026-07-01");
+    expect(adds[0]!.input.ExpressionAttributeValues[":n"].N).toBe("12");
+
+    const deletes = seen.filter((c) => c.name === "DeleteItemCommand");
+    // Two counter rows, then the site registry row — the site goes LAST so a crash
+    // mid-merge leaves it listed and re-runnable.
+    expect(deletes).toHaveLength(3);
+    expect(deletes[2]!.input.Key).toEqual({ pk: { S: "sites" }, sk: { S: "site#old" } });
+  });
+
+  it("refuses a no-op or a missing side rather than silently doing nothing", async () => {
+    const db = { send: vi.fn() } as unknown as DynamoDBClient;
+    await expect(mergeSites(db, "T", "a", "a")).rejects.toThrow(/same site/i);
+    await expect(mergeSites(db, "T", "", "b")).rejects.toThrow(/both sites/i);
     expect(db.send).not.toHaveBeenCalled();
   });
 });

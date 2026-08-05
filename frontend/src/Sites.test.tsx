@@ -1,5 +1,6 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { Sites, isFirstPartyFor } from "./Sites";
 import { api } from "./api";
 
@@ -9,12 +10,14 @@ vi.mock("./api", () => ({
     addSite: vi.fn(),
     removeSite: vi.fn(),
     siteStats: vi.fn(),
+    mergeSites: vi.fn(),
   },
 }));
 
 const mocked = api as unknown as {
   listSites: ReturnType<typeof vi.fn>;
   siteStats: ReturnType<typeof vi.fn>;
+  mergeSites: ReturnType<typeof vi.fn>;
 };
 
 beforeEach(() => {
@@ -86,5 +89,42 @@ describe("Sites screen", () => {
     await waitFor(() => expect(screen.getByText(/receiving data/i)).toBeInTheDocument());
     expect(screen.getByText("128")).toBeInTheDocument();
     expect(screen.getByText("73")).toBeInTheDocument();
+  });
+});
+
+/**
+ * Founder 2026-08-05, after a rebuild + restore: "I see 2 instances of each website, one
+ * with backup stats and one with the current one". The live snippet reports into exactly
+ * one of them, so neither can simply be deleted — the two are merged, into the id the tag
+ * already carries (the newer record), so no website ever needs editing.
+ */
+describe("two records for the same website", () => {
+  const twins = [
+    { id: "old", name: "Olly", domain: "ollydigital.com", createdAt: "2026-06-01" },
+    { id: "new", name: "Olly", domain: "www.ollydigital.com", createdAt: "2026-08-05" },
+  ];
+
+  it("offers to merge them, and explains that nothing is lost", async () => {
+    mocked.listSites.mockResolvedValue({ sites: twins });
+    render(<Sites collectorUrl={URL} />);
+    expect(await screen.findByText(/Some websites are listed twice/i)).toBeInTheDocument();
+    expect(screen.getByText(/nothing is lost/i)).toBeInTheDocument();
+    // Matched on the bare domain, so a www. difference still counts as the same site.
+    expect(screen.getByText(/2 records/i)).toBeInTheDocument();
+  });
+
+  it("merges the older record INTO the newer one — the id the live tag uses", async () => {
+    mocked.listSites.mockResolvedValue({ sites: twins });
+    mocked.mergeSites.mockResolvedValue({ movedRows: 40, days: 20 });
+    render(<Sites collectorUrl={URL} />);
+    await userEvent.click(await screen.findByRole("button", { name: /merge into one/i }));
+    await waitFor(() => expect(mocked.mergeSites).toHaveBeenCalledWith("old", "new"));
+  });
+
+  it("says nothing at all when every website appears once", async () => {
+    mocked.listSites.mockResolvedValue({ sites: [twins[0]] });
+    render(<Sites collectorUrl={URL} />);
+    await screen.findByText(/ollydigital\.com/i);
+    expect(screen.queryByText(/listed twice/i)).not.toBeInTheDocument();
   });
 });

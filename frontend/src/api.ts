@@ -69,6 +69,10 @@ export const api = {
   restore: (path: string): Promise<{ restored: number; mergedSites: string[]; conflicts: string[] }> =>
     host.invokeBackend({ method: "POST", path: "/restore", body: { path } }, 15 * 60_000),
 
+  /** Merge one site's history into another (two records for the same website). */
+  mergeSites: (fromId: string, intoId: string): Promise<{ movedRows: number; days: number }> =>
+    host.invokeBackend({ method: "POST", path: "/merge-sites", body: { fromId, intoId } }, 10 * 60_000),
+
   /** True Reach (custom domains, one small stack each): live state, add, remove, update. */
   edgeStatus: (): Promise<{ edges: EdgeStatus[] }> => host.invokeBackend({ method: "GET", path: "/truereach" }),
   edgeDeploy: (domain: string): Promise<{ operation: string }> =>

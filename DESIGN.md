@@ -1041,6 +1041,16 @@ materializes.
   widen it. Removal moved into a 5th tab, **deliberately unlocked** — "you can always
   remove everything" is a platform promise that outranks the paywall, and burying it
   inside a paid tab would have broken it for free-tier users.
+- 2026-08-05 — **Merge two records of the same website (the repair for the rebuild
+  mess).** The restore-side fix below only absorbs an EMPTY twin; the founder's real
+  situation had data on both sides — restored history in one record, live traffic in the
+  other, three websites over. Deleting either would have destroyed real numbers, so the
+  app now merges: `mergeSites(from, into)` adds every `count` onto the target day's row
+  (arithmetic, never overwrite), deletes each source row as it lands, and removes the
+  source site row LAST so a crash leaves the merge re-runnable. "Your sites" detects
+  same-domain duplicates (bare-domain match, so `www.` differences count) and offers one
+  button, defaulting to keeping the NEWEST id — that is the one the deployed snippet
+  carries, so merging never asks the owner to edit a website again.
 - 2026-08-05 — **Restore MERGES by domain instead of duplicating** (founder, on the real
   rebuild: "it created a duplication of the website records… I see 2 instances of each
   website, one with backup stats and one with the current one"). A restore after a rebuild

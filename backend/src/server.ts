@@ -28,7 +28,7 @@ import { CognitoIdentityProviderClient } from "@aws-sdk/client-cognito-identity-
 import { deployEdge, edgeStatusAll, listEdges, removeEdge, updateEdge, type CertStore, type EdgeCtx } from "./edge";
 import { DeleteItemCommand, PutItemCommand, QueryCommand } from "@aws-sdk/client-dynamodb";
 import { SiteRegistry, lastDays } from "./sites";
-import { createBackup, listBackups, restoreBackup } from "./backup";
+import { createBackup, listBackups, mergeSites, restoreBackup } from "./backup";
 
 const boot = readBootstrap();
 const credentials = brokerCredentialsProvider(boot);
@@ -384,6 +384,12 @@ const server = createServer(async (req, res) => {
     }
     if (parts[0] === "backups" && parts.length === 1 && method === "GET") {
       return json(res, 200, { backups: await listBackups() });
+    }
+    // Merge one site's history into another (same domain, two records — the classic
+    // rebuild-then-restore situation). Additive: no counter is overwritten or lost.
+    if (parts[0] === "merge-sites" && parts.length === 1 && method === "POST") {
+      const body = (await readBody(req)) as { fromId?: string; intoId?: string } | undefined;
+      return json(res, 200, await mergeSites(db, tableName, body?.fromId ?? "", body?.intoId ?? ""));
     }
     if (parts[0] === "restore" && parts.length === 1 && method === "POST") {
       const body = (await readBody(req)) as { path?: string } | undefined;

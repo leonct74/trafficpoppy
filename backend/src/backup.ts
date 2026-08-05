@@ -28,6 +28,7 @@ import {
   PutItemCommand,
   QueryCommand,
   ScanCommand,
+  UpdateItemCommand,
   type DynamoDBClient,
   type AttributeValue,
 } from "@aws-sdk/client-dynamodb";
@@ -228,6 +229,70 @@ export async function restoreBackup(
   }
 
   return { restored, mergedSites, conflicts };
+}
+
+/**
+ * Move one site's whole history onto another site id, adding where both hold the same
+ * day (counters are `count` numbers keyed by (pk, sk), so a merge is arithmetic — no row
+ * is overwritten and nothing is lost). Born 2026-08-05: a rebuild + restore leaves the
+ * history under the OLD id while the website's tag already reports into a NEW one, and
+ * deleting either side would throw away real numbers. Merging into the id the tag uses
+ * means the owner never has to edit their website again.
+ *
+ * Idempotent it is NOT — running it twice would double the moved counts — so the source
+ * rows are deleted as they are applied, and the source site row last. A crash mid-merge
+ * leaves the remainder in place, and re-running finishes the job.
+ */
+export async function mergeSites(
+  db: DynamoDBClient,
+  tableName: string,
+  fromSiteId: string,
+  intoSiteId: string,
+): Promise<{ movedRows: number; days: number }> {
+  if (!fromSiteId || !intoSiteId) throw new Error("Both sites are needed to merge.");
+  if (fromSiteId === intoSiteId) throw new Error("That is the same site.");
+
+  let movedRows = 0;
+  const days = new Set<string>();
+  // Rows are deleted as they're applied, so paging with ExclusiveStartKey would resume
+  // from keys that no longer exist. Rescan from the top until the source is drained.
+  for (let pass = 0; pass < 10_000; pass++) {
+    const page = await db.send(
+      new ScanCommand({
+        TableName: tableName,
+        FilterExpression: "begins_with(pk, :p)",
+        ExpressionAttributeValues: { ":p": { S: `site#${fromSiteId}#day#` } },
+      }),
+    );
+    if ((page.Items ?? []).length === 0) break;
+    for (const item of page.Items ?? []) {
+      const row = item as Row;
+      const pk = row.pk?.S ?? "";
+      const sk = row.sk?.S ?? "";
+      const count = Number(row.count?.N ?? "0");
+      const day = pk.slice(pk.indexOf("#day#") + "#day#".length);
+      if (!sk || !Number.isFinite(count) || count === 0) continue;
+      days.add(day);
+      await db.send(
+        new UpdateItemCommand({
+          TableName: tableName,
+          Key: { pk: { S: `site#${intoSiteId}#day#${day}` }, sk: { S: sk } },
+          UpdateExpression: "ADD #c :n",
+          ExpressionAttributeNames: { "#c": "count" },
+          ExpressionAttributeValues: { ":n": { N: String(count) } },
+        }),
+      );
+      await db.send(new DeleteItemCommand({ TableName: tableName, Key: { pk: { S: pk }, sk: { S: sk } } }));
+      movedRows += 1;
+    }
+  }
+
+  // The now-empty site row goes last: if anything above failed, the site is still listed
+  // and the merge can be re-run.
+  await db.send(
+    new DeleteItemCommand({ TableName: tableName, Key: { pk: { S: "sites" }, sk: { S: `site#${fromSiteId}` } } }),
+  );
+  return { movedRows, days: days.size };
 }
 
 /** A site's address reduced to the form two rows can be compared on. */

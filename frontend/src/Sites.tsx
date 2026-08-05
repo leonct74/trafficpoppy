@@ -19,6 +19,77 @@ import { isFirstPartyFor } from "../../shared/src/first-party";
  * (multi-domain since 2026-08-04); each is applied per-site, only to the site it's
  * actually first-party for.
  */
+/** The site's address as isFirstPartyFor sees it — the key two records are matched on. */
+const bare = (d: string) =>
+  d.trim().toLowerCase().replace(/^https?:\/\//, "").replace(/^www\./, "").replace(/[/:].*$/, "");
+
+/**
+ * Two records for the same website (founder 2026-08-05, after a rebuild + restore: "I see
+ * 2 instances of each website, one with backup stats and one with the current one"). The
+ * live snippet reports into exactly one of them, so deleting either loses real numbers.
+ * Merging adds one into the other — and defaults to keeping the NEWER id, because that is
+ * the one the website's tag already carries: merge this way and no website is ever edited.
+ */
+function DuplicateSites(props: { sites: Site[]; onMerged: () => Promise<void>; onError: (m: string | null) => void }) {
+  const [busy, setBusy] = useState<string | null>(null);
+  const [done, setDone] = useState<string[]>([]);
+
+  const groups = new Map<string, Site[]>();
+  for (const s of props.sites) {
+    const key = bare(s.domain);
+    if (key) groups.set(key, [...(groups.get(key) ?? []), s]);
+  }
+  const dupes = [...groups.entries()].filter(([, list]) => list.length > 1);
+  if (dupes.length === 0) return null;
+
+  return (
+    <div className="banner info stack" style={{ gap: 10 }}>
+      <div>
+        <strong>Some websites are listed twice.</strong> This happens when statistics are restored
+        after a fresh setup: one record holds the older history, the other is the one your website
+        is sending to now. Merging adds them together — nothing is lost, and your snippet keeps
+        working exactly as it is.
+      </div>
+      {dupes.map(([domain, list]) => {
+        // Keep the newest record: the tag on the live site was written for it.
+        const sorted = [...list].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+        const keep = sorted[sorted.length - 1]!;
+        const older = sorted.slice(0, -1);
+        return (
+          <div key={domain} className="spread">
+            <span className="muted" style={{ fontSize: 12 }}>
+              <span className="mono">{domain}</span> — {list.length} records
+              {done.includes(domain) ? " · merged" : ""}
+            </span>
+            {!done.includes(domain) && (
+              <Button
+                className="btn btn-sm"
+                busyLabel="Merging…"
+                onClick={async () => {
+                  props.onError(null);
+                  setBusy(domain);
+                  try {
+                    for (const o of older) await api.mergeSites(o.id, keep.id);
+                    setDone((d) => [...d, domain]);
+                    await props.onMerged();
+                  } catch (e) {
+                    props.onError((e as Error).message);
+                  } finally {
+                    setBusy(null);
+                  }
+                }}
+                disabled={busy !== null}
+              >
+                Merge into one
+              </Button>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export function Sites(props: { collectorUrl: string; trueReachDomains?: string[]; onOpen?: (site: Site) => void }) {
   const [sites, setSites] = useState<Site[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -55,6 +126,8 @@ export function Sites(props: { collectorUrl: string; trueReachDomains?: string[]
       <h2 className="section-title">Your sites</h2>
 
       {err && <div className="banner err">{err}</div>}
+
+      {sites && <DuplicateSites sites={sites} onMerged={load} onError={setErr} />}
 
       {sites === null ? (
         <div className="row">
