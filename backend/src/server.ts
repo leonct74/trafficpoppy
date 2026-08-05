@@ -367,14 +367,20 @@ const server = createServer(async (req, res) => {
     // Back up & restore (2026-08-05): the statistics leave the table as a local JSON file
     // before a teardown, and come back into a fresh one. The sidecar writes the file —
     // frontends are sandboxed and cannot download (platform rule).
-    // Paid per site, exactly like the online dashboard: the gate is the deployed edge
-    // domains, read here from the cert registry — never a filter the frontend supplies.
+    // Paid per site (§12). Two sources decide which sites a backup may contain:
+    //   · deployed edge domains — read here, from the sidecar's own cert registry;
+    //   · subscribed domains — only the HOST can answer that (it verifies with the
+    //     platform), so the frontend passes them in.
+    // The second is therefore convenience-gating, not security — and deliberately so:
+    // the table is the owner's own, they can always read it with their own credentials
+    // (founder's framing, DESIGN.md §14). What must never happen is the reverse error —
+    // holding back numbers someone HAS paid for because their DNS isn't finished yet.
     if (parts[0] === "backup" && parts.length === 1 && method === "POST") {
-      const onlineDomains = (await listEdges(edge)).map((e) => e.domain);
-      const body = (await readBody(req)) as { siteIds?: string[] } | undefined;
-      // A supplied pick only NARROWS the gate above — it can never widen it.
+      const body = (await readBody(req)) as { siteIds?: string[]; entitledDomains?: string[] } | undefined;
+      const deployed = (await listEdges(edge)).map((e) => e.domain);
+      const declared = Array.isArray(body?.entitledDomains) ? body!.entitledDomains : [];
       const siteIds = Array.isArray(body?.siteIds) ? body!.siteIds : undefined;
-      return json(res, 200, await createBackup(db, tableName, onlineDomains, { siteIds }));
+      return json(res, 200, await createBackup(db, tableName, [...deployed, ...declared], { siteIds }));
     }
     if (parts[0] === "backups" && parts.length === 1 && method === "GET") {
       return json(res, 200, { backups: await listBackups() });

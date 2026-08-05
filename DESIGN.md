@@ -1041,3 +1041,15 @@ materializes.
   widen it. Removal moved into a 5th tab, **deliberately unlocked** — "you can always
   remove everything" is a platform promise that outranks the paywall, and burying it
   inside a paid tab would have broken it for free-tier users.
+- 2026-08-05 — **Backup's gate corrected: the SUBSCRIPTION, not the deployed edge**
+  (founder: "even if I unlock 3 domains subscriptions, I can only backup
+  ollydigital.com"). The first cut derived everything from the cert registry, which meant
+  a paid domain whose DNS wasn't finished was excluded — holding back numbers someone had
+  already paid for, the worst direction to get this wrong. Now a site is backable when the
+  host says it's subscribed OR an edge is live for it (the second keeps a lapsed
+  subscription from stranding numbers that are still being collected). One `PaidProbe`
+  per site in App feeds both the tab lock and the picker, so the Back up tab opens on a
+  subscription alone. Trade-off accepted knowingly: only the host can answer "is this
+  subscribed?", so that half arrives from the frontend and is convenience-gating, not
+  security — which matches the founder's own framing (the table is the owner's; the tier
+  sells convenience). The sidecar still derives deployed edges itself.

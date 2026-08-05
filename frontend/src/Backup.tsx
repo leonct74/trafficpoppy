@@ -11,7 +11,11 @@ import type { Site } from "./types";
  * number; it NEVER contains visitor hashes or the salt — those die with the table by
  * design. Restore is two-step confirmed: old rows replace same-key newer ones.
  */
-export function Backup(props: { onlineDomains: string[] }) {
+export function Backup(props: {
+  onlineDomains: string[];
+  /** Domains the host confirms are subscribed — the gate (a live edge also counts). */
+  paidDomains: string[];
+}) {
   const [sites, setSites] = useState<Site[] | null>(null);
   const [picked, setPicked] = useState<Set<string> | null>(null); // null = "all unlocked"
   const [backups, setBackups] = useState<{ path: string; date: string; bytes: number }[]>([]);
@@ -39,10 +43,13 @@ export function Backup(props: { onlineDomains: string[] }) {
     api.listSites().then(({ sites: s }) => setSites(s)).catch(() => setSites([]));
   }, []);
 
-  // The same first-party rule the sidecar enforces — shown here so the owner can SEE
-  // which sites a backup would cover before pressing anything. The server re-derives it;
-  // this list is for the eyes, never the gate.
-  const unlocked = (sites ?? []).filter((s) => props.onlineDomains.some((d) => isFirstPartyFor(s.domain, d)));
+  // A site is backable when it's SUBSCRIBED — a live edge counts too, so a lapsed
+  // subscription never strands the numbers of a domain that's still collecting.
+  // Deploying the edge is a later step (DNS), and waiting on it must not hold back a
+  // backup the owner has already paid for.
+  const isUnlocked = (s: Site) =>
+    props.paidDomains.includes(s.domain) || props.onlineDomains.some((d) => isFirstPartyFor(s.domain, d));
+  const unlocked = (sites ?? []).filter(isUnlocked);
   const locked = (sites ?? []).filter((s) => !unlocked.includes(s));
   const selected = unlocked.filter((s) => picked === null || picked.has(s.id));
   const toggle = (id: string) => {
@@ -76,6 +83,12 @@ export function Backup(props: { onlineDomains: string[] }) {
           {unlocked.length === 0 && (
             <p className="muted" style={{ margin: 0, fontSize: 12 }}>
               No site has Advanced Stats yet — unlock one in the Advanced stats tab to back it up.
+            </p>
+          )}
+          {unlocked.length > 0 && (
+            <p className="muted" style={{ margin: 0, fontSize: 12 }}>
+              A subscribed site can be backed up straight away — its statistics address doesn't have
+              to be set up yet.
             </p>
           )}
           {unlocked.map((s) => (
@@ -114,7 +127,14 @@ export function Backup(props: { onlineDomains: string[] }) {
             setErr(null);
             setRestored(null);
             try {
-              setSaved(await api.backup(selected.map((s) => s.id)));
+              // The subscribed domains ride along: the sidecar can see deployed edges on
+              // its own, but only the host can answer "is this domain subscribed?".
+              setSaved(
+                await api.backup(
+                  selected.map((s) => s.id),
+                  unlocked.map((s) => s.domain),
+                ),
+              );
               await refresh();
             } catch (e) {
               setErr((e as Error).message);

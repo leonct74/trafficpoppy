@@ -8,6 +8,21 @@ vi.mock("./api", () => ({
   api: { backup: vi.fn(), listBackups: vi.fn(), restore: vi.fn(), listSites: vi.fn() },
 }));
 
+// Each site asks the host whether it's subscribed — default to "no" so the tests below
+// pin the SUBSCRIPTION as the gate, separately from a deployed edge.
+vi.mock("./host", async () => {
+  const actual = await vi.importActual<typeof import("./host")>("./host");
+  return {
+    ...actual,
+    host: {
+      isPurchased: vi.fn().mockResolvedValue(false),
+      purchaseInfo: vi.fn().mockResolvedValue({ price: null, owned: false }),
+      buyProduct: vi.fn(),
+      manageSubscription: vi.fn(),
+    },
+  };
+});
+
 const mocked = api as unknown as {
   backup: ReturnType<typeof vi.fn>;
   listBackups: ReturnType<typeof vi.fn>;
@@ -30,12 +45,12 @@ beforeEach(() => {
 
 describe("Back up & restore", () => {
   it("says the privacy truth up front: nothing about individual visitors is in a backup", async () => {
-    render(<Backup onlineDomains={ONLINE} />);
+    render(<Backup onlineDomains={ONLINE} paidDomains={[]} />);
     expect(await screen.findByText(/never contains anything about individual visitors/i)).toBeInTheDocument();
   });
 
   it("says the paid rule: a backup covers the sites unlocked with Advanced Stats", async () => {
-    render(<Backup onlineDomains={ONLINE} />);
+    render(<Backup onlineDomains={ONLINE} paidDomains={[]} />);
     expect(await screen.findByText(/covers the sites you've unlocked with Advanced/i)).toBeInTheDocument();
   });
 
@@ -45,7 +60,7 @@ describe("Back up & restore", () => {
    * selectable, locked ones visible but disabled, so the gate is legible at a glance.
    */
   it("lists sites before the button: unlocked ones pickable, locked ones shown and disabled", async () => {
-    render(<Backup onlineDomains={ONLINE} />);
+    render(<Backup onlineDomains={ONLINE} paidDomains={[]} />);
     const olly = await screen.findByLabelText("ollydigital.com");
     expect(olly).toBeChecked();
     const other = screen.getByLabelText("other-site.com (locked)");
@@ -56,23 +71,48 @@ describe("Back up & restore", () => {
 
   it("the button names what it will do, and backs up only the ticked sites", async () => {
     mocked.backup.mockResolvedValue({ path: "/x/f.json", rows: 3, sites: 1, counters: 2, skippedSites: [] });
-    render(<Backup onlineDomains={ONLINE} />);
+    render(<Backup onlineDomains={ONLINE} paidDomains={[]} />);
     // One unlocked site → the button says its name rather than a bare count.
     const btn = await screen.findByRole("button", { name: /back up ollydigital\.com/i });
     await userEvent.click(btn);
-    await waitFor(() => expect(mocked.backup).toHaveBeenCalledWith(["s1"]));
+    await waitFor(() => expect(mocked.backup).toHaveBeenCalledWith(["s1"], ["ollydigital.com"]));
   });
 
   it("untick everything and there is nothing to back up — the button disables", async () => {
-    render(<Backup onlineDomains={ONLINE} />);
+    render(<Backup onlineDomains={ONLINE} paidDomains={[]} />);
     await userEvent.click(await screen.findByLabelText("ollydigital.com"));
     await waitFor(() => expect(screen.getByRole("button", { name: /back up 0 sites/i })).toBeDisabled());
     expect(mocked.backup).not.toHaveBeenCalled();
   });
 
   it("with no site unlocked, points at the Advanced stats tab instead", async () => {
-    render(<Backup onlineDomains={[]} />);
+    render(<Backup onlineDomains={[]} paidDomains={[]} />);
     expect(await screen.findByText(/No site has Advanced Stats yet/i)).toBeInTheDocument();
+  });
+
+  /**
+   * Founder 2026-08-05: "even if I unlock 3 domains subscriptions, I can only backup
+   * ollydigital.com". The first cut gated on the DEPLOYED EDGE, so a paid domain whose
+   * DNS wasn't finished was excluded — holding back numbers someone had paid for. The
+   * subscription is the gate; a live edge only counts as an additional way in.
+   */
+  it("a SUBSCRIBED site is backable before its address exists — no edge required", async () => {
+    mocked.backup.mockResolvedValue({ path: "/x/f.json", rows: 1, sites: 1, counters: 0, skippedSites: [] });
+
+    // Subscribed, nothing deployed at all.
+    render(<Backup onlineDomains={[]} paidDomains={["other-site.com"]} />);
+    const other = await screen.findByLabelText("other-site.com");
+    expect(other).toBeChecked();
+    // …and the site that is neither paid nor deployed stays locked.
+    expect(screen.getByLabelText("ollydigital.com (locked)")).toBeDisabled();
+
+    await userEvent.click(screen.getByRole("button", { name: /back up other-site\.com/i }));
+    await waitFor(() => expect(mocked.backup).toHaveBeenCalledWith(["s2"], ["other-site.com"]));
+  });
+
+  it("a live edge still counts, so a lapsed subscription never strands the numbers", async () => {
+    render(<Backup onlineDomains={ONLINE} paidDomains={[]} />); // isPurchased: false everywhere
+    expect(await screen.findByLabelText("ollydigital.com")).toBeChecked();
   });
 
   it("NAMES any site left out — a silent omission would be found only after a teardown", async () => {
@@ -83,7 +123,7 @@ describe("Back up & restore", () => {
       counters: 9,
       skippedSites: ["other-site.com", "third.com"],
     });
-    render(<Backup onlineDomains={ONLINE} />);
+    render(<Backup onlineDomains={ONLINE} paidDomains={[]} />);
     await userEvent.click(await screen.findByRole("button", { name: /back up /i }));
     expect(await screen.findByText(/Not in this backup:/i)).toBeInTheDocument();
     expect(screen.getByText(/other-site\.com, third\.com/)).toBeInTheDocument();
@@ -98,7 +138,7 @@ describe("Back up & restore", () => {
       counters: 42,
       skippedSites: [],
     });
-    render(<Backup onlineDomains={ONLINE} />);
+    render(<Backup onlineDomains={ONLINE} paidDomains={[]} />);
     await userEvent.click(await screen.findByRole("button", { name: /back up /i }));
     expect(await screen.findByText(/42/)).toBeInTheDocument(); // daily records count
     expect(screen.getByText(/TrafficPoppy-backup-2026-08-05\.json/)).toBeInTheDocument();
@@ -110,7 +150,7 @@ describe("Back up & restore", () => {
       backups: [{ path: "/x/TrafficPoppy-backup-2026-08-05.json", date: "2026-08-05", bytes: 2048 }],
     });
     mocked.restore.mockResolvedValue({ restored: 43 });
-    render(<Backup onlineDomains={ONLINE} />);
+    render(<Backup onlineDomains={ONLINE} paidDomains={[]} />);
 
     await userEvent.click(await screen.findByRole("button", { name: /^restore$/i }));
     expect(mocked.restore).not.toHaveBeenCalled(); // first click only asks

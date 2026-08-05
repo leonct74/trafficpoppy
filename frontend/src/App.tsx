@@ -3,6 +3,7 @@ import { api } from "./api";
 import { Backup } from "./Backup";
 import { Button } from "./Button";
 import { Dashboard } from "./Dashboard";
+import { PaidProbe } from "./entitlement";
 import { Integrate } from "./Integrate";
 import { host, type AccessState } from "./host";
 import { RemovePanel } from "./RemovePanel";
@@ -79,6 +80,21 @@ export function App() {
   const [lockedTab, setLockedTab] = useState<SectionKey | null>(null);
   /** Advanced Stats is live on at least one domain — unlocks the Team access tab. */
   const onlineActive = edgeState.some((e) => e.phase === "ready");
+  /** Every site, and the ones the host confirms are subscribed (see PaidProbe below). */
+  const [allSites, setAllSites] = useState<Site[]>([]);
+  const [paid, setPaid] = useState<Record<string, boolean>>({});
+  const answerPaid = useCallback(
+    (domain: string, entitled: boolean) =>
+      setPaid((prev) => (prev[domain] === entitled ? prev : { ...prev, [domain]: entitled })),
+    [],
+  );
+  const paidDomains = allSites.map((s) => s.domain).filter((d) => paid[d]);
+  /**
+   * Back up unlocks on the SUBSCRIPTION, not on a deployed address (founder 2026-08-05:
+   * "even if I unlock 3 domains subscriptions, I can only backup ollydigital.com").
+   * Paying and then waiting on DNS must never hold back a backup.
+   */
+  const backupActive = onlineActive || paidDomains.length > 0;
   const pollRef = useRef<number | null>(null);
 
   /**
@@ -129,6 +145,13 @@ export function App() {
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // The site list, for the paid probes below (which decide the Back up tab). Only once
+  // the stack is up — before that there is no table to ask.
+  useEffect(() => {
+    if (phase !== "ready") return;
+    api.listSites().then(({ sites }) => setAllSites(sites)).catch(() => setAllSites([]));
+  }, [phase]);
 
   // Poll only while AWS is actually mid-operation, and re-attach automatically on mount
   // if we return to find work still in flight.
@@ -289,11 +312,16 @@ export function App() {
               </div>
             )}
           </div>
+          {/* Draw nothing — they answer "is this site subscribed?" for the tab locks. */}
+          {allSites.map((s) => (
+            <PaidProbe key={s.id} domain={s.domain} onAnswer={answerPaid} />
+          ))}
           <div className="tabs" role="tablist" aria-label="TrafficPoppy sections" style={{ marginBottom: 14 }}>
             {SECTIONS.map((s) => {
               // Paid tabs are locked until Advanced Stats is active — but each tab stays
               // pressable so the lock can EXPLAIN itself (a dead control reads as broken).
-              const locked = s.key in LOCKED_TABS && !onlineActive;
+              const locked =
+                s.key in LOCKED_TABS && !(s.key === "backup" ? backupActive : onlineActive);
               return (
                 <button
                   key={s.key}
@@ -369,9 +397,10 @@ export function App() {
             {/* Paid tier (founder decision 2026-08-05) — the tab is locked without an
                 active domain, and the panel double-checks so a stale section state can
                 never render the tools unpaid. */}
-            {onlineActive && (
+            {backupActive && (
               <Backup
                 onlineDomains={edgeState.filter((e) => e.phase === "ready" && e.domain).map((e) => e.domain!)}
+                paidDomains={paidDomains}
               />
             )}
           </div>

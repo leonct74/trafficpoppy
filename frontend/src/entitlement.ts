@@ -62,6 +62,23 @@ export function useEntitlement(target: string | undefined, productId = ADVANCED_
   return { entitled, info, refresh, manage };
 }
 
+/**
+ * One domain's paid standing, reported upward. A hook can't run in a loop, so a caller
+ * with N sites renders N of these (they draw nothing). Single source of truth: every
+ * surface that asks "is this site unlocked?" goes through the same useEntitlement.
+ */
+export function PaidProbe(props: {
+  domain: string;
+  onAnswer: (domain: string, entitled: boolean) => void;
+}): null {
+  const { entitled } = useEntitlement(props.domain);
+  const { onAnswer, domain } = props;
+  useEffect(() => {
+    if (entitled !== undefined) onAnswer(domain, entitled);
+  }, [entitled, onAnswer, domain]);
+  return null;
+}
+
 /** "$14.99/month" from the host's live price — never a hard-coded number in our UI. */
 /**
  * The price as the UI must present it (founder rule, MailPoppy's PricingAmount is the
