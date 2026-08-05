@@ -337,15 +337,22 @@ function EdgeCard(props: {
       )}
       {edge.phase === "deploying" && (
         <>
-          <p className="muted" style={{ margin: 0 }}>
-            Domain verified — AWS is rolling your collector out to its edge locations (usually 5–15 minutes).
+          <p style={{ margin: 0 }}>
+            <strong>Domain verified.</strong> AWS is now copying your collector to its edge locations
+            around the world. This usually takes 20–40 minutes, and on a busy day it can take a few
+            hours — that is normal, and there is nothing you can do to speed it up.
           </p>
-          {/* Founder 2026-08-05: "the UI is not showing the new DNS, I see only a spinner".
-              There is no address to show yet — CloudFront mints it when the rollout ends.
-              Say so, or the wait reads as a stall. */}
+          {/* Founder 2026-08-05, twice: first "the UI is not showing the new DNS, I see only a
+              spinner", then — after a much longer wait than our copy promised — "tell the user it
+              can take a few hours … otherwise they will redo the setup multiple times". An
+              understated estimate doesn't just annoy: it makes people tear the thing down and
+              restart, which only restarts the wait. */}
           <p className="muted" style={{ margin: 0, fontSize: 12 }}>
-            There's no DNS record to add yet: the address you'll point your domain at doesn't exist
-            until this finishes. It appears here by itself — you can close the app meanwhile.
+            <strong>Close the app if you like</strong> — the work happens in your AWS account, not
+            here, and this screen picks it up wherever it has got to when you come back. Please
+            don't remove and set it up again: starting over throws away the progress and begins the
+            same wait from zero. There's no DNS record to add yet either — the address you'll point
+            your domain at doesn't exist until this finishes, and it appears here by itself.
           </p>
         </>
       )}
