@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { renderHook, act } from "@testing-library/react";
-import { useEntitlement, formatPrice } from "./entitlement";
+import { useEntitlement, formatPrice, displayPrice } from "./entitlement";
 import { Purchase } from "./Purchase";
 import { host } from "./host";
 
@@ -91,6 +91,52 @@ describe("formatPrice", () => {
     );
     expect(formatPrice(null)).toBeNull();
     expect(formatPrice({ price: null, owned: false })).toBeNull();
+  });
+});
+
+/**
+ * The founder's documented display rule (MailPoppy's PricingAmount is the reference):
+ * a yearly subscription LEADS with its monthly equivalent, the real yearly charge is
+ * always stated ("billed yearly · …"), and nothing is ever hard-coded.
+ */
+describe("displayPrice — yearly leads with the monthly equivalent", () => {
+  const yearly = (over = {}) => ({
+    price: { amountMinor: 999, currency: "USD", kind: "subscription" as const, interval: "year", trialDays: 15, ...over },
+    owned: false,
+  });
+
+  it("shows the monthly figure up front and the yearly charge in the note", () => {
+    const p = displayPrice(yearly())!;
+    expect(p.headline).toBe("$0.83/month"); // 999/12 → 83¢, live-derived
+    expect(p.note).toBe("billed yearly · $9.99, after the free trial");
+    expect(p.trialDays).toBe(15);
+  });
+
+  it("without a trial the note is just the yearly charge", () => {
+    const p = displayPrice(yearly({ trialDays: undefined }))!;
+    expect(p.note).toBe("billed yearly · $9.99");
+    expect(p.trialDays).toBeUndefined();
+  });
+
+  it("a monthly subscription needs no note — the headline IS the charge", () => {
+    const p = displayPrice(PRICE)!;
+    expect(p.headline).toBe("$14.99/month");
+    expect(p.note).toBeUndefined();
+  });
+});
+
+describe("Purchase surface with a yearly live price", () => {
+  it("button leads monthly; the billed-yearly truth and the trial are both visible", () => {
+    const e = {
+      entitled: false as boolean | undefined,
+      info: { name: "Advanced Stats", price: { amountMinor: 999, currency: "USD", kind: "subscription" as const, interval: "year", trialDays: 15 }, owned: false },
+      refresh: vi.fn(),
+      manage: vi.fn(),
+    };
+    render(<Purchase entitlement={e} target="ollydigital.com" pitch="why" />);
+    expect(screen.getByRole("button", { name: /Unlock · \$0\.83\/month/ })).toBeInTheDocument();
+    expect(screen.getByText(/billed yearly · \$9\.99/)).toBeInTheDocument();
+    expect(screen.getByText(/15-day free trial/)).toBeInTheDocument();
   });
 });
 

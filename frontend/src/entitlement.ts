@@ -63,9 +63,41 @@ export function useEntitlement(target: string | undefined, productId = ADVANCED_
 }
 
 /** "$14.99/month" from the host's live price — never a hard-coded number in our UI. */
-export function formatPrice(info: PurchaseInfo | null): string | null {
+/**
+ * The price as the UI must present it (founder rule, MailPoppy's PricingAmount is the
+ * documented reference): a yearly subscription LEADS with its monthly equivalent, and the
+ * real yearly charge is always stated right beneath it ("billed yearly · $9.99") — rounding
+ * a twelfth to the nearest cent means 12× the monthly won't always equal the yearly, which
+ * is exactly why the billed amount is never hidden. Prices are NEVER hard-coded: everything
+ * here derives from the live platform price the host handed over.
+ */
+export interface PriceDisplay {
+  /** What the Unlock button and the price line lead with, e.g. "$0.83/month". */
+  headline: string;
+  /** The honest fine print for yearly billing, e.g. "billed yearly · $9.99". */
+  note?: string;
+  /** Free-trial length, when the live price carries one. */
+  trialDays?: number;
+}
+
+export function displayPrice(info: PurchaseInfo | null): PriceDisplay | null {
   if (!info?.price) return null;
-  const { amountMinor, currency, kind, interval } = info.price;
-  const amount = new Intl.NumberFormat(undefined, { style: "currency", currency }).format(amountMinor / 100);
-  return kind === "subscription" ? `${amount}/${interval ?? "month"}` : amount;
+  const { amountMinor, currency, kind, interval, trialDays } = info.price;
+  const money = (m: number) => new Intl.NumberFormat(undefined, { style: "currency", currency }).format(m / 100);
+  if (kind !== "subscription") return { headline: money(amountMinor) };
+
+  const trial = typeof trialDays === "number" && trialDays > 0 ? trialDays : undefined;
+  if (interval === "year") {
+    return {
+      headline: `${money(Math.round(amountMinor / 12))}/month`,
+      note: `billed yearly · ${money(amountMinor)}${trial ? ", after the free trial" : ""}`,
+      trialDays: trial,
+    };
+  }
+  return { headline: `${money(amountMinor)}/${interval ?? "month"}`, trialDays: trial };
+}
+
+/** The one-line form of displayPrice — the headline only. Kept for existing callers. */
+export function formatPrice(info: PurchaseInfo | null): string | null {
+  return displayPrice(info)?.headline ?? null;
 }

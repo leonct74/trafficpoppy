@@ -1,5 +1,5 @@
 import { Button } from "./Button";
-import { formatPrice } from "./entitlement";
+import { displayPrice } from "./entitlement";
 import type { Entitlement } from "./entitlement";
 import { host, ADVANCED_STATS_PRODUCT } from "./host";
 
@@ -22,7 +22,7 @@ export function Purchase(props: {
 }) {
   const { entitlement, target } = props;
   const productId = props.productId ?? ADVANCED_STATS_PRODUCT;
-  const price = formatPrice(entitlement.info);
+  const price = displayPrice(entitlement.info);
 
   if (entitlement.entitled === undefined) {
     return (
@@ -49,11 +49,17 @@ export function Purchase(props: {
   return (
     <div className="card card-2 stack" style={{ marginBottom: 0 }}>
       <div>{props.pitch}</div>
+      {price?.trialDays && (
+        <span className="badge ok" style={{ alignSelf: "flex-start" }}>
+          {price.trialDays}-day free trial
+        </span>
+      )}
       <div className="spread">
         <span className="muted" style={{ fontSize: 13 }}>
           {price ? (
             <>
-              <strong>{price}</strong> for <span className="mono">{target}</span> · cancel any time
+              <strong>{price.headline}</strong> for <span className="mono">{target}</span>
+              {price.note ? <> · {price.note}</> : null} · cancel any time
             </>
           ) : (
             <>Priced per domain · cancel any time</>
@@ -69,7 +75,7 @@ export function Purchase(props: {
             await entitlement.refresh();
           }}
         >
-          {price ? `Unlock · ${price}` : "Unlock"}
+          {price ? `Unlock · ${price.headline}` : "Unlock"}
         </Button>
       </div>
     </div>

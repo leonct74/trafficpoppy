@@ -84,7 +84,14 @@ export interface PurchaseTarget {
 
 export interface PurchaseInfo {
   name?: string;
-  price: { amountMinor: number; currency: string; kind: "subscription" | "one_time"; interval?: string } | null;
+  price: {
+    amountMinor: number;
+    currency: string;
+    kind: "subscription" | "one_time";
+    interval?: string;
+    /** Free-trial length in days, when the platform price carries one. */
+    trialDays?: number;
+  } | null;
   owned: boolean;
 }
 
