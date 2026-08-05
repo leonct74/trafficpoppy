@@ -336,9 +336,18 @@ function EdgeCard(props: {
         </>
       )}
       {edge.phase === "deploying" && (
-        <p className="muted" style={{ margin: 0 }}>
-          Domain verified — AWS is rolling your collector out to its edge locations (usually 5–15 minutes).
-        </p>
+        <>
+          <p className="muted" style={{ margin: 0 }}>
+            Domain verified — AWS is rolling your collector out to its edge locations (usually 5–15 minutes).
+          </p>
+          {/* Founder 2026-08-05: "the UI is not showing the new DNS, I see only a spinner".
+              There is no address to show yet — CloudFront mints it when the rollout ends.
+              Say so, or the wait reads as a stall. */}
+          <p className="muted" style={{ margin: 0, fontSize: 12 }}>
+            There's no DNS record to add yet: the address you'll point your domain at doesn't exist
+            until this finishes. It appears here by itself — you can close the app meanwhile.
+          </p>
+        </>
       )}
       {edge.phase === "ready" && (
         <p style={{ margin: 0 }}>
