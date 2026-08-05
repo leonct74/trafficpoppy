@@ -142,6 +142,7 @@
           "UpdateUserPool",
           "DescribeUserPool",
           "DeleteUserPoolClient",
+          "UpdateUserPoolClient",
           "DescribeUserPoolClient",
           "GetUserPoolMfaConfig",
           "AdminCreateUser",
