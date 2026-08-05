@@ -4,8 +4,9 @@ import { Button } from "./Button";
 import { CopyButton } from "./CopyButton";
 import { TRUE_REACH } from "./catalogue";
 import { useEntitlement } from "./entitlement";
+import { isFirstPartyFor } from "../../shared/src/first-party";
 import { Purchase } from "./Purchase";
-import type { EdgeStatus } from "./types";
+import type { EdgeStatus, Site } from "./types";
 
 /**
  * The True Reach card (DESIGN.md §12), MULTI-DOMAIN since 2026-08-04: each domain runs its
@@ -17,11 +18,28 @@ import type { EdgeStatus } from "./types";
  * things are. DNS stays manual: we show the records; the owner adds them wherever their
  * DNS lives.
  */
+/** A site's address the way isFirstPartyFor sees it: bare hostname, no www/protocol/path. */
+function normalizeSite(siteDomain: string): string {
+  return siteDomain
+    .trim()
+    .toLowerCase()
+    .replace(/^https?:\/\//, "")
+    .replace(/^www\./, "")
+    .replace(/[/:].*$/, "");
+}
+
 export function TrueReach(props: { suggestedDomain?: string; onStatus?: (edges: EdgeStatus[]) => void }) {
   const [edges, setEdges] = useState<EdgeStatus[] | null>(null);
+  const [sites, setSites] = useState<Site[] | null>(null);
   const [domain, setDomain] = useState("");
   const [err, setErr] = useState<string | null>(null);
   const { onStatus } = props;
+
+  useEffect(() => {
+    // The add field validates against the owner's sites (below) — a subscription only
+    // does something for a domain one of their sites lives under.
+    api.listSites().then(({ sites: s }) => setSites(s)).catch(() => setSites([]));
+  }, []);
 
   const refresh = async () => {
     const { edges: e } = await api.edgeStatus();
@@ -53,8 +71,34 @@ export function TrueReach(props: { suggestedDomain?: string; onStatus?: (edges: 
   }, [onStatus]);
 
   // §12: one paid unit = ONE DOMAIN — the add flow bills the domain being typed.
-  const addTarget = domain.trim().toLowerCase() || (edges?.length ? "" : (props.suggestedDomain ?? ""));
-  const entitlement = useEntitlement(addTarget || undefined);
+  // Pasted URLs are forgiven: protocol, path and trailing dot are stripped.
+  const typed = domain
+    .trim()
+    .toLowerCase()
+    .replace(/^https?:\/\//, "")
+    .replace(/[/?#].*$/, "")
+    .replace(/\.$/, "");
+  const addTarget = typed || (edges?.length ? "" : (props.suggestedDomain ?? ""));
+
+  // Founder feedback 2026-08-05: the field must say WHAT to type. Three honest answers:
+  // any subdomain name you like, it must sit under a site you track (an unrelated domain
+  // would bill and put nothing online), and never the bare domain (that would point the
+  // whole website at the statistics page). Same matcher as the viewer's online gate.
+  const bareSite = sites?.find((s) => normalizeSite(s.domain) === addTarget);
+  const matchedSite = sites?.find((s) => isFirstPartyFor(s.domain, addTarget));
+  const guidance: { ok: boolean; msg?: string } = !addTarget
+    ? { ok: false }
+    : sites === null
+      ? { ok: true } // still loading — don't flash a warning at a valid domain
+      : bareSite
+        ? { ok: false, msg: `That's your website's own address — visitors would land on the statistics page instead of your site. Use a subdomain, like stats.${addTarget}.` }
+        : matchedSite
+          ? { ok: true, msg: `This will put ${matchedSite.domain} online.` }
+          : sites.length === 0
+            ? { ok: false, msg: "First add your website under “Your sites” — the statistics address must be a subdomain of it." }
+            : { ok: false, msg: `This address doesn't belong to any site you track, so it wouldn't put any of them online. Use a subdomain of ${sites.map((s) => normalizeSite(s.domain)).join(", ")} — like stats.${normalizeSite(sites[0]!.domain)}.` };
+
+  const entitlement = useEntitlement(guidance.ok && addTarget ? addTarget : undefined);
 
   const addDomain = async () => {
     setErr(null);
@@ -103,13 +147,24 @@ export function TrueReach(props: { suggestedDomain?: string; onStatus?: (edges: 
           <Button
             className="btn btn-primary"
             busyLabel="Starting…"
-            disabled={!addTarget || !entitlement.entitled}
+            disabled={!addTarget || !guidance.ok || !entitlement.entitled}
             onClick={addDomain}
           >
             Set up your domain
           </Button>
         </div>
-        {addTarget && !entitlement.entitled && (
+        <p className="muted" style={{ margin: 0, fontSize: 12 }}>
+          Type a subdomain of a site you track — most people use{" "}
+          <span className="mono">stats.</span>, but any name works (insights, analytics…).
+          It becomes the address of your statistics page and where your tracking script
+          loads from. Not your website's own address, and not an unrelated domain.
+        </p>
+        {guidance.msg && addTarget.includes(".") && (
+          <p className={guidance.ok ? "muted" : undefined} style={{ margin: 0, fontSize: 12, ...(guidance.ok ? {} : { color: "var(--poppy-danger)" }) }}>
+            {guidance.msg}
+          </p>
+        )}
+        {addTarget && guidance.ok && !entitlement.entitled && (
           <Purchase
             entitlement={entitlement}
             target={addTarget}

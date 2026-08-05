@@ -945,3 +945,22 @@ materializes.
   stats tab (founder UX rule: a dead control reads as broken; a lock must explain
   itself). All prior gating stands (viewer Lambda server-side, invite flow, removable
   lapsed viewers). 337 tests green.
+- 2026-08-04 — **Viewer sessions persist until removed (founder rule: "the login screen
+  is for revoked or signed-out people, not for the top of every hour").**
+  RefreshTokenValidity 3650 days; id/access tokens stay 60 minutes so revocation still
+  bites within the hour. The stats page stores the refresh token (localStorage `tp_rt`),
+  silently trades it for fresh tokens at boot and once on any 401, and clears both on
+  sign-out. Revocation = the existing Remove button (AdminDeleteUser kills the refresh
+  token instantly). Needed `cognito-idp:UpdateUserPoolClient` in the manifest — the
+  first-ever pool-client UPDATE; the third and last Cognito lifecycle verb to surface
+  live (create/update/delete now all exercised).
+- 2026-08-05 — **The add-domain field explains itself and blocks the two paid mistakes
+  (founder: "should I add my domain, or stats., or any domain I have access to?").**
+  Answer, now stated under the field: type a SUBDOMAIN of a tracked site — any name
+  (stats., insights., …), it becomes the statistics page's address. The field validates
+  live against the owner's sites using the same `isFirstPartyFor` matcher as the viewer
+  gate: the bare website address is refused (visitors would land on the stats page
+  instead of the site — suggests `stats.<domain>`), an unrelated domain is refused (it
+  would bill per §12 yet put no site online), no sites yet points at "Your sites" first,
+  and a valid subdomain confirms which site it will put online. Pasted URLs are
+  normalized (protocol/path stripped). Desktop-only change; helper prompt updated.

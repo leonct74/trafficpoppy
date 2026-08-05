@@ -6,7 +6,7 @@ import { api } from "./api";
 import type { EdgeStatus } from "./types";
 
 vi.mock("./api", () => ({
-  api: { edgeStatus: vi.fn(), edgeDeploy: vi.fn(), edgeRemove: vi.fn(), edgeUpdate: vi.fn() },
+  api: { edgeStatus: vi.fn(), edgeDeploy: vi.fn(), edgeRemove: vi.fn(), edgeUpdate: vi.fn(), listSites: vi.fn() },
 }));
 
 // True Reach is a paid tier (§12), so the card now asks the host whether this domain is
@@ -28,6 +28,7 @@ const mocked = api as unknown as {
   edgeStatus: ReturnType<typeof vi.fn>;
   edgeDeploy: ReturnType<typeof vi.fn>;
   edgeUpdate: ReturnType<typeof vi.fn>;
+  listSites: ReturnType<typeof vi.fn>;
 };
 
 const edge = (over: Partial<EdgeStatus>): EdgeStatus => ({
@@ -42,6 +43,10 @@ beforeEach(async () => {
   const { host } = await import("./host");
   (host.isPurchased as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(true);
   (host.purchaseInfo as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({ price: null, owned: true });
+  // The add field validates against the owner's sites — default to one tracked site.
+  mocked.listSites.mockResolvedValue({
+    sites: [{ id: "s1", name: "Olly", domain: "ollydigital.com", createdAt: "2026-01-01" }],
+  });
 });
 
 describe("TrueReach card", () => {
@@ -102,6 +107,55 @@ describe("TrueReach card", () => {
     render(<TrueReach onStatus={(e) => seen.push(e)} />);
     await waitFor(() => expect(seen.length).toBeGreaterThan(0));
     expect(seen[0]![0]!.domain).toBe("stats.ollydigital.com");
+  });
+});
+
+describe("the add field says what to type (founder feedback 2026-08-05)", () => {
+  beforeEach(() => {
+    mocked.edgeStatus.mockResolvedValue({ edges: [] });
+  });
+
+  it("always explains: a subdomain of a tracked site, any name, becomes the stats address", async () => {
+    render(<TrueReach />);
+    expect(await screen.findByText(/subdomain of a site you track/i)).toBeInTheDocument();
+    expect(screen.getByText(/any name works/i)).toBeInTheDocument();
+    expect(screen.getByText(/address of your statistics page/i)).toBeInTheDocument();
+  });
+
+  it("blocks the bare website address — that would replace the site with the stats page", async () => {
+    render(<TrueReach />);
+    await userEvent.type(await screen.findByPlaceholderText("stats.your-domain.com"), "ollydigital.com");
+    expect(await screen.findByText(/visitors would land on the statistics page/i)).toBeInTheDocument();
+    expect(screen.getByText(/stats\.ollydigital\.com/)).toBeInTheDocument(); // suggests the fix
+    expect(screen.getByRole("button", { name: /set up your domain/i })).toBeDisabled();
+  });
+
+  it("blocks an unrelated domain — it would bill but put no site online", async () => {
+    render(<TrueReach />);
+    await userEvent.type(await screen.findByPlaceholderText("stats.your-domain.com"), "stats.other-site.com");
+    expect(await screen.findByText(/doesn't belong to any site you track/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /set up your domain/i })).toBeDisabled();
+    expect(mocked.edgeDeploy).not.toHaveBeenCalled();
+  });
+
+  it("confirms which site a valid subdomain will put online, and forgives a pasted URL", async () => {
+    render(<TrueReach />);
+    await userEvent.type(
+      await screen.findByPlaceholderText("stats.your-domain.com"),
+      "https://insights.ollydigital.com/",
+    );
+    expect(await screen.findByText(/will put ollydigital\.com online/i)).toBeInTheDocument();
+    mocked.edgeDeploy.mockResolvedValue({ operation: "CREATE" });
+    await userEvent.click(screen.getByRole("button", { name: /set up your domain/i }));
+    await waitFor(() => expect(mocked.edgeDeploy).toHaveBeenCalledWith("insights.ollydigital.com"));
+  });
+
+  it("with no sites yet, points at the Your sites step first", async () => {
+    mocked.listSites.mockResolvedValue({ sites: [] });
+    render(<TrueReach />);
+    await userEvent.type(await screen.findByPlaceholderText("stats.your-domain.com"), "stats.new-site.com");
+    expect(await screen.findByText(/First add your website/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /set up your domain/i })).toBeDisabled();
   });
 });
 
