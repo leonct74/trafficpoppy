@@ -1041,6 +1041,16 @@ materializes.
   widen it. Removal moved into a 5th tab, **deliberately unlocked** — "you can always
   remove everything" is a platform promise that outranks the paywall, and burying it
   inside a paid tab would have broken it for free-tier users.
+- 2026-08-05 — **Restore MERGES by domain instead of duplicating** (founder, on the real
+  rebuild: "it created a duplication of the website records… I see 2 instances of each
+  website, one with backup stats and one with the current one"). A restore after a rebuild
+  lands beside sites the owner re-created while their history sat in the file. Restore now
+  reads the existing sites first and, for every domain it brings back, deletes the OTHER
+  site row for that domain **only when it holds no counters** — an empty twin is the
+  placeholder the merge was supposed to absorb. A twin with real data is never deleted
+  silently: it comes back as a `conflicts` entry and the card tells the owner to choose.
+  Keeping the restored id (not the twin's) is deliberate — the snippet already deployed on
+  the website carries it, so merging this way leaves the live tag working untouched.
 - 2026-08-05 — **Packaged for the catalogue on the SHARED runtime (rule R1).** The SEA
   sidecar is retired as a shipping artifact: `backend/index.cjs` (esbuild → CJS, built by
   `scripts/build-backend.mjs`) plus `"runtime": "node22"` in the manifest's backend block.

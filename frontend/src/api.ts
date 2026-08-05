@@ -66,7 +66,7 @@ export const api = {
     host.invokeBackend({ method: "POST", path: "/backup", body: { siteIds, entitledDomains } }, 5 * 60_000),
   listBackups: (): Promise<{ backups: { path: string; date: string; bytes: number }[] }> =>
     host.invokeBackend({ method: "GET", path: "/backups" }),
-  restore: (path: string): Promise<{ restored: number }> =>
+  restore: (path: string): Promise<{ restored: number; mergedSites: string[]; conflicts: string[] }> =>
     host.invokeBackend({ method: "POST", path: "/restore", body: { path } }, 15 * 60_000),
 
   /** True Reach (custom domains, one small stack each): live state, add, remove, update. */

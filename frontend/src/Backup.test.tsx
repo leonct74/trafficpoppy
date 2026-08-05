@@ -149,7 +149,7 @@ describe("Back up & restore", () => {
     mocked.listBackups.mockResolvedValue({
       backups: [{ path: "/x/TrafficPoppy-backup-2026-08-05.json", date: "2026-08-05", bytes: 2048 }],
     });
-    mocked.restore.mockResolvedValue({ restored: 43 });
+    mocked.restore.mockResolvedValue({ restored: 43, mergedSites: [], conflicts: [] });
     render(<Backup onlineDomains={ONLINE} paidDomains={[]} />);
 
     await userEvent.click(await screen.findByRole("button", { name: /^restore$/i }));
@@ -159,5 +159,29 @@ describe("Back up & restore", () => {
       expect(mocked.restore).toHaveBeenCalledWith("/x/TrafficPoppy-backup-2026-08-05.json"),
     );
     expect(await screen.findByText(/have their history back/i)).toBeInTheDocument();
+  });
+
+  it("says when a restore merged into a site the owner had re-created", async () => {
+    mocked.listBackups.mockResolvedValue({
+      backups: [{ path: "/x/TrafficPoppy-backup-2026-08-05.json", date: "2026-08-05", bytes: 2048 }],
+    });
+    mocked.restore.mockResolvedValue({ restored: 43, mergedSites: ["ollydigital.com"], conflicts: [] });
+    render(<Backup onlineDomains={ONLINE} paidDomains={[]} />);
+    await userEvent.click(await screen.findByRole("button", { name: /^restore$/i }));
+    await userEvent.click(screen.getByRole("button", { name: /really restore/i }));
+    expect(await screen.findByText(/Merged into your existing ollydigital\.com/i)).toBeInTheDocument();
+    expect(screen.getByText(/each site appears once/i)).toBeInTheDocument();
+  });
+
+  it("reports a clash instead of deleting, when both copies hold data", async () => {
+    mocked.listBackups.mockResolvedValue({
+      backups: [{ path: "/x/TrafficPoppy-backup-2026-08-05.json", date: "2026-08-05", bytes: 2048 }],
+    });
+    mocked.restore.mockResolvedValue({ restored: 43, mergedSites: [], conflicts: ["ollydigital.com"] });
+    render(<Backup onlineDomains={ONLINE} paidDomains={[]} />);
+    await userEvent.click(await screen.findByRole("button", { name: /^restore$/i }));
+    await userEvent.click(screen.getByRole("button", { name: /really restore/i }));
+    expect(await screen.findByText(/now appears twice/i)).toBeInTheDocument();
+    expect(screen.getByText(/nothing was deleted/i)).toBeInTheDocument();
   });
 });

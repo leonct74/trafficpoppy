@@ -24,7 +24,9 @@ import { readFile, writeFile, readdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, basename } from "node:path";
 import {
+  DeleteItemCommand,
   PutItemCommand,
+  QueryCommand,
   ScanCommand,
   type DynamoDBClient,
   type AttributeValue,
@@ -160,20 +162,99 @@ export async function restoreBackup(
   db: DynamoDBClient,
   tableName: string,
   path: string,
-): Promise<{ restored: number }> {
+): Promise<{ restored: number; mergedSites: string[]; conflicts: string[] }> {
   // Only files that look like ours — this endpoint must never become a generic file reader.
   if (!FILE_RE.test(basename(path))) throw new Error("Not a TrafficPoppy backup file.");
   const parsed = JSON.parse(await readFile(path, "utf8")) as { version?: number; rows?: Row[] };
   if (parsed.version !== 1 || !Array.isArray(parsed.rows)) {
     throw new Error("This file is not a readable TrafficPoppy backup.");
   }
+
+  // Which sites already exist, by domain — a restore after a rebuild lands next to sites
+  // the owner re-created in the meantime (founder 2026-08-05: "it created a duplication
+  // of the website records, instead of merging with the current deployment").
+  const existing = new Map<string, { id: string }[]>();
+  let startKey: Row | undefined;
+  do {
+    const page = await db.send(new ScanCommand({ TableName: tableName, ExclusiveStartKey: startKey }));
+    for (const item of page.Items ?? []) {
+      const row = item as Row;
+      if (keepRow(row) !== "site") continue;
+      const domain = normalizeDomain(row.domain?.S ?? "");
+      if (!domain) continue;
+      const id = (row.sk?.S ?? "").slice("site#".length);
+      existing.set(domain, [...(existing.get(domain) ?? []), { id }]);
+    }
+    startKey = page.LastEvaluatedKey as Row | undefined;
+  } while (startKey);
+
   let restored = 0;
+  const restoredSiteIds = new Map<string, string>(); // domain → restored id
   for (const row of parsed.rows) {
     // Re-apply the whitelist on the way IN too: an edited file cannot smuggle salt or
     // visitor-hash rows back into the table.
-    if (!keepRow(row)) continue;
+    const kind = keepRow(row);
+    if (!kind) continue;
+    if (kind === "site") {
+      const domain = normalizeDomain(row.domain?.S ?? "");
+      if (domain) restoredSiteIds.set(domain, (row.sk?.S ?? "").slice("site#".length));
+    }
     await db.send(new PutItemCommand({ TableName: tableName, Item: row }));
     restored += 1;
   }
-  return { restored };
+
+  // MERGE, don't duplicate: for every domain the restore brought back, drop the OTHER
+  // site rows for that same domain — but only the ones holding no counters. An empty
+  // twin is a placeholder the owner re-created while the real history was in the file;
+  // deleting it is the merge they expected. A twin that HAS collected data is never
+  // touched silently — it is reported so the owner decides.
+  const mergedSites: string[] = [];
+  const conflicts: string[] = [];
+  for (const [domain, restoredId] of restoredSiteIds) {
+    for (const twin of existing.get(domain) ?? []) {
+      if (twin.id === restoredId) continue;
+      if (await siteHasCounters(db, tableName, twin.id)) {
+        conflicts.push(domain);
+        continue;
+      }
+      await db.send(
+        new DeleteItemCommand({
+          TableName: tableName,
+          Key: { pk: { S: "sites" }, sk: { S: `site#${twin.id}` } },
+        }),
+      );
+      mergedSites.push(domain);
+    }
+  }
+
+  return { restored, mergedSites, conflicts };
+}
+
+/** A site's address reduced to the form two rows can be compared on. */
+function normalizeDomain(d: string): string {
+  return d.trim().toLowerCase().replace(/^https?:\/\//, "").replace(/^www\./, "").replace(/[/:].*$/, "");
+}
+
+/** Does this site hold any day counters? Cheap existence check — one row is enough. */
+async function siteHasCounters(db: DynamoDBClient, tableName: string, siteId: string): Promise<boolean> {
+  const out = await db.send(
+    new QueryCommand({
+      TableName: tableName,
+      KeyConditionExpression: "pk = :p",
+      ExpressionAttributeValues: { ":p": { S: `site#${siteId}#day#${new Date().toISOString().slice(0, 10)}` } },
+      Limit: 1,
+    }),
+  );
+  if ((out.Items ?? []).length > 0) return true;
+  // Days are separate partitions, so "today" alone can miss data. Fall back to a bounded
+  // scan for any counter row of this site.
+  const scan = await db.send(
+    new ScanCommand({
+      TableName: tableName,
+      FilterExpression: "begins_with(pk, :p)",
+      ExpressionAttributeValues: { ":p": { S: `site#${siteId}#day#` } },
+      Limit: 200,
+    }),
+  );
+  return (scan.Items ?? []).length > 0;
 }

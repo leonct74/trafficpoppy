@@ -26,7 +26,9 @@ export function Backup(props: {
     counters: number;
     skippedSites: string[];
   } | null>(null);
-  const [restored, setRestored] = useState<number | null>(null);
+  const [restored, setRestored] = useState<{ restored: number; mergedSites: string[]; conflicts: string[] } | null>(
+    null,
+  );
   const [confirming, setConfirming] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
@@ -173,8 +175,25 @@ export function Backup(props: {
       )}
 
       {restored !== null && (
-        <div className="banner info">
-          Restored <strong>{restored}</strong> records — your dashboards have their history back.
+        <div className="banner info stack" style={{ gap: 6 }}>
+          <div>
+            Restored <strong>{restored.restored}</strong> records — your dashboards have their history back.
+          </div>
+          {/* A restore after a rebuild lands beside sites the owner re-created meanwhile.
+              Merging the empty twins is the behaviour they expect; say it happened. */}
+          {restored.mergedSites.length > 0 && (
+            <div>
+              Merged into your existing {restored.mergedSites.join(", ")} — the empty copy was removed, so each
+              site appears once. Your tracking snippet is unchanged.
+            </div>
+          )}
+          {restored.conflicts.length > 0 && (
+            <div>
+              <strong>{restored.conflicts.join(", ")} now appears twice.</strong> Both copies hold data, so
+              nothing was deleted — open Your sites and remove whichever you don't want. The restored one
+              carries the older history.
+            </div>
+          )}
         </div>
       )}
 
@@ -197,8 +216,7 @@ export function Backup(props: {
                       setErr(null);
                       setSaved(null);
                       try {
-                        const r = await api.restore(b.path);
-                        setRestored(r.restored);
+                        setRestored(await api.restore(b.path));
                         setConfirming(null);
                       } catch (e) {
                         setErr((e as Error).message);
