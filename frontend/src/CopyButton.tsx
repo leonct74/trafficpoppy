@@ -3,7 +3,11 @@ import { useState } from "react";
 /** Copy, with the legacy fallback that matters here: the host renders us in a webview that
  *  may not delegate `clipboard-write`, and a copy button that silently fails is a dead
  *  button (AGENTS.md §9). Exported so every copy affordance shares the one resilient path. */
-export async function copyText(text: string): Promise<boolean> {
+export async function copyText(raw: string): Promise<boolean> {
+  // Never copy surrounding whitespace. A DNS record name pasted with one leading space
+  // is stored as a DIFFERENT name (`\040_3d47…`), served as NXDOMAIN, and cost a live
+  // debugging session on 2026-08-06 — while looking perfectly normal in every UI.
+  const text = raw.trim();
   try {
     if (navigator.clipboard?.writeText) {
       await navigator.clipboard.writeText(text);

@@ -225,7 +225,14 @@ async function edgeStatusOne(
     certStatus = d.Certificate?.Status;
     const rr = d.Certificate?.DomainValidationOptions?.[0]?.ResourceRecord;
     if (certStatus === "PENDING_VALIDATION" && rr?.Name && rr.Value) {
-      records.push({ purpose: "certificate-validation", name: rr.Name, type: rr.Type ?? "CNAME", value: rr.Value });
+      // Trimmed defensively: one leading space in a DNS name is stored as a DIFFERENT
+      // name and serves NXDOMAIN while looking normal (live lesson, 2026-08-06).
+      records.push({
+        purpose: "certificate-validation",
+        name: rr.Name.trim(),
+        type: rr.Type ?? "CNAME",
+        value: rr.Value.trim(),
+      });
     }
   } catch {
     /* keep going with what we have */

@@ -242,6 +242,26 @@ describe("the live edge lifecycle (unchanged by site-first)", () => {
     expect(screen.getByText(/even if you close the app/i)).toBeInTheDocument();
   });
 
+  it("DNS record chips select as ONE unit and never show surrounding whitespace", async () => {
+    mocked.edgeStatus.mockResolvedValue({
+      edges: [edge({
+        phase: "validating",
+        domain: "stats.ollydigital.com",
+        inProgress: true,
+        records: [
+          // A hypothetical padded answer from AWS must render (and copy) clean.
+          { purpose: "certificate-validation", name: " _abc.stats.ollydigital.com. ", type: "CNAME", value: " _xyz.acm-validations.aws. " },
+        ],
+      })],
+    });
+    render(<TrueReach />);
+    const chip = await screen.findByText("_xyz.acm-validations.aws.");
+    expect(chip.textContent).toBe("_xyz.acm-validations.aws."); // trimmed
+    // user-select: all → a manual click selects exactly the value, a drag can't grab a
+    // neighbouring space (the \040 NXDOMAIN lesson, 2026-08-06).
+    expect(chip).toHaveStyle({ userSelect: "all" });
+  });
+
   it("when live, shows the pointing record and says snippets now serve first-party", async () => {
     mocked.edgeStatus.mockResolvedValue({
       edges: [edge({

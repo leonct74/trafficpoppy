@@ -1041,6 +1041,15 @@ materializes.
   widen it. Removal moved into a 5th tab, **deliberately unlocked** — "you can always
   remove everything" is a platform promise that outranks the paywall, and burying it
   inside a paid tab would have broken it for free-tier users.
+- 2026-08-06 — **Whitespace can never survive a copy from the UI (the `\040` lesson).**
+  A validation CNAME pasted into Route 53 with ONE leading space is stored as a
+  different name (`\040_3d47…`), served as authoritative NXDOMAIN, and looks perfectly
+  normal in every console — it cost a live debugging session tracing "the record exists
+  but doesn't resolve" all the way to Route 53's own test tool before the escape showed.
+  Three layers now: `copyText` trims everything it puts on the clipboard, `RecordLine`
+  trims what it renders AND sets `user-select: all` so a manual click selects exactly
+  the value (a drag can't grab a neighbouring space), and the sidecar trims ACM's
+  name/value at the source. Founder: "this mistake can happen to other users."
 - 2026-08-05 — **Merge two records of the same website (the repair for the rebuild
   mess).** The restore-side fix below only absorbs an EMPTY twin; the founder's real
   situation had data on both sides — restored history in one record, live traffic in the

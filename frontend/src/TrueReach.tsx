@@ -455,15 +455,19 @@ function EdgeCard(props: {
 }
 
 function RecordLine(props: { label: string; value: string }) {
+  // Trimmed at every layer, and `user-select: all` makes a manual click select EXACTLY
+  // the value — a drag can't pick up a neighbouring space. One leading space in a DNS
+  // name becomes a different name (`\040…`, NXDOMAIN) while looking normal everywhere.
+  const value = props.value.trim();
   return (
     <div className="row" style={{ gap: 8 }}>
       <span className="muted" style={{ fontSize: 12, width: 44 }}>
         {props.label}
       </span>
-      <code className="chip" style={{ flex: 1, overflowX: "auto", whiteSpace: "nowrap" }}>
-        {props.value}
+      <code className="chip" style={{ flex: 1, overflowX: "auto", whiteSpace: "nowrap", userSelect: "all" }}>
+        {value}
       </code>
-      <CopyButton text={props.value} label={props.label} />
+      <CopyButton text={value} label={props.label} />
     </div>
   );
 }
