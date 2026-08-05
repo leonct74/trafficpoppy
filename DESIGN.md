@@ -494,6 +494,10 @@ query strings are a privacy minefield; if kept, allowlist exactly `utm_source/me
 **Free forever:** the entire core — unlimited sites, unlimited retention, full dashboard,
 read API/schema, teardown export. The user hosts their own data; charging for the basics
 would betray the BYO-cloud story and the marketplace's goodwill economics.
+*(Amended 2026-08-05: "teardown export" moved to the paid tier — see the Back up & restore
+entries in §14. The data itself stays open: it sits in the owner's own DynamoDB table with
+a documented schema, readable with their own credentials at any time, so there is no
+lock-in — the paid part is the convenience of one-click backup/restore in the app.)*
 
 **Premium = "True Reach" (one flagship feature, subscription):** the custom-domain tier.
 Deploys CloudFront + ACM certificate + Route53 record (`stats.<their-domain>`) in their AWS
@@ -1009,3 +1013,10 @@ materializes.
   live ticker, cert rows. Honest cost: after a restore, returning visitors count as new
   once per window. Card lives in "Your sites". Manifest gained `dynamodb:Scan`
   (TrafficPoppy* table only, rating still medium) → restart + re-approval owed.
+- 2026-08-05 — **Back up & restore becomes a paid tab (founder: "we need motivations to
+  convert into paid users, we are already giving nice free stats on the desktop").**
+  Fourth tab "Back up", locked exactly like Team access (🔒, pressable, explaining modal
+  → Open Advanced stats) until Advanced Stats is live on ≥ 1 domain; the panel renders
+  nothing while locked. Supersedes §12's free-teardown-export line (amended in place):
+  no lock-in is preserved because the data stays in the owner's table with a documented
+  schema — the paid part is the one-click convenience.

@@ -13,6 +13,9 @@ vi.mock("./api", () => ({
     listSites: vi.fn(),
     listViewers: vi.fn(),
     edgeStatus: vi.fn(),
+    listBackups: vi.fn().mockResolvedValue({ backups: [] }),
+    backup: vi.fn(),
+    restore: vi.fn(),
   },
 }));
 
@@ -110,13 +113,14 @@ describe("the section tabs", () => {
     await screen.findByText(/TrafficPoppy is set up/i);
   };
 
-  it("shows three tabs — sites first, Team access to the RIGHT of Advanced stats", async () => {
+  it("shows four tabs — sites first, the paid pair (Team access, Back up) on the right", async () => {
     await openApp();
     const tabs = screen.getAllByRole("tab");
     expect(tabs.map((t) => t.textContent?.replace(" 🔒", ""))).toEqual([
       "Your sites",
       "Advanced stats",
       "Team access",
+      "Back up",
     ]);
     expect(tabs[0]).toHaveAttribute("aria-selected", "true");
   });
@@ -174,5 +178,44 @@ describe("the Team access lock", () => {
     await userEvent.setup().click(teamTab);
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(screen.getByRole("heading", { name: /Team access/i })).toBeVisible();
+  });
+});
+
+/**
+ * Founder decision 2026-08-05: Back up & restore is part of the paid tier too ("we need
+ * motivations to convert into paid users — the desktop stats are already a nice free
+ * tier"). Supersedes the §12 free-teardown-export line; recorded in DESIGN.md. Same lock
+ * pattern as Team access: pressable, explains itself, never renders the tools unpaid.
+ */
+describe("the Back up lock", () => {
+  const openApp = async () => {
+    mocked.status.mockResolvedValue(ready());
+    render(<App />);
+    await screen.findByText(/TrafficPoppy is set up/i);
+  };
+
+  it("locked without a subscription: the modal explains and the panel stays empty", async () => {
+    await openApp(); // edgeStatus default: no edges
+    const backupTab = screen.getByRole("tab", { name: /Back up/i });
+    expect(backupTab).toHaveAttribute("aria-disabled", "true");
+
+    await userEvent.setup().click(backupTab);
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
+    expect(screen.getByText(/To back up and restore statistics, Advanced Stats must be activated/i)).toBeInTheDocument();
+    // The gated panel renders NOTHING while locked — not merely hidden.
+    expect(screen.queryByRole("button", { name: /back up all statistics now/i, hidden: true })).not.toBeInTheDocument();
+  });
+
+  it("unlocked once a domain is live: the tab shows the backup tools", async () => {
+    mocked.edgeStatus.mockResolvedValue({
+      edges: [{ phase: "ready", domain: "stats.ollydigital.com", records: [], inProgress: false }],
+    });
+    await openApp();
+    const backupTab = await screen.findByRole("tab", { name: /^Back up$/i });
+    await waitFor(() => expect(backupTab).not.toHaveAttribute("aria-disabled"));
+
+    await userEvent.setup().click(backupTab);
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /back up all statistics now/i })).toBeVisible();
   });
 });

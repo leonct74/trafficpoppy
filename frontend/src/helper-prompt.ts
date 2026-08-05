@@ -59,6 +59,7 @@ THE OPTIONAL UPGRADE — "${TRUE_REACH.label}" (the "Advanced stats" tab):
 - Ten sites never mean ten dashboards: every unlocked address serves the SAME statistics page — one login at any of them lists every unlocked site.
 - If a subscription ends, nothing is torn down behind my back: the address keeps working in my AWS, and the app shows a notice with the two options — renew, or remove the address (all collected numbers stay either way; collection falls back to the AWS address).
 - It also unlocks the "Team access" tab (locked until a domain is live): invite people by email — AWS sends them a temporary password — and grant all sites or only specific ones (the agency case). They can only read, their accounts live in my own AWS, and access is revocable at any time. Sites without the upgrade never appear in the browser, for anyone.
+- And it unlocks the "Back up" tab: save all sites and every collected number to a local file, and restore them after a fresh setup — statistics survive a full removal. Backups never contain anything about individual visitors.
 - Recommend it if what I described involves any of these, in this order of weight: (1) checking stats away from one desktop computer, or sharing them with a team, a client, or an agency; (2) ad blockers likely hiding a meaningful share of my audience; (3) wanting country statistics. Otherwise say the free tier is enough — full collection, just desktop-only viewing.
 
 WHAT A VISIT RECORDS (this is the whole list — there is nothing more detailed anywhere):

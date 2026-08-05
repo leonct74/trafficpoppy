@@ -33,8 +33,29 @@ const SECTIONS = [
   { key: "sites", label: "Your sites" },
   { key: "advanced", label: "Advanced stats" },
   { key: "team", label: "Team access" },
+  { key: "backup", label: "Back up" },
 ] as const;
 type SectionKey = (typeof SECTIONS)[number]["key"];
+
+/** Tabs that need an active Advanced Stats domain, with what the lock modal says. */
+const LOCKED_TABS: Partial<Record<SectionKey, { title: string; body: string }>> = {
+  team: {
+    title: "To set up a team, Advanced Stats must be activated.",
+    body:
+      "Team access lets people open your statistics from any browser — and that page is part of " +
+      "the Advanced Stats upgrade. Set up a domain in the Advanced stats tab first, then invite " +
+      "your team here.",
+  },
+  // Founder decision 2026-08-05: Back up & restore is part of the paid tier (supersedes
+  // the §12 "free teardown export" line — recorded in DESIGN.md).
+  backup: {
+    title: "To back up and restore statistics, Advanced Stats must be activated.",
+    body:
+      "Backups save your sites and every collected number to a file, so they survive a full " +
+      "removal and return after a fresh setup. It's part of the Advanced Stats upgrade — unlock " +
+      "a site in the Advanced stats tab first.",
+  },
+};
 
 export function App() {
   const [phase, setPhase] = useState<Phase>("loading");
@@ -50,8 +71,8 @@ export function App() {
   /** The True Reach edges (one per domain) — ready ones serve snippets first-party. */
   const [edgeState, setEdgeState] = useState<EdgeStatus[]>([]);
   const [section, setSection] = useState<SectionKey>("sites");
-  /** The "Team access needs Advanced Stats" modal (shown when the locked tab is pressed). */
-  const [showTeamLocked, setShowTeamLocked] = useState(false);
+  /** Which locked tab's "needs Advanced Stats" modal is open (null = none). */
+  const [lockedTab, setLockedTab] = useState<SectionKey | null>(null);
   /** Advanced Stats is live on at least one domain — unlocks the Team access tab. */
   const onlineActive = edgeState.some((e) => e.phase === "ready");
   const pollRef = useRef<number | null>(null);
@@ -266,9 +287,9 @@ export function App() {
           </div>
           <div className="tabs" role="tablist" aria-label="TrafficPoppy sections" style={{ marginBottom: 14 }}>
             {SECTIONS.map((s) => {
-              // Team access is locked until Advanced Stats is active — but the tab stays
+              // Paid tabs are locked until Advanced Stats is active — but each tab stays
               // pressable so the lock can EXPLAIN itself (a dead control reads as broken).
-              const locked = s.key === "team" && !onlineActive;
+              const locked = s.key in LOCKED_TABS && !onlineActive;
               return (
                 <button
                   key={s.key}
@@ -278,7 +299,7 @@ export function App() {
                   className={`tab${section === s.key ? " active" : ""}`}
                   style={locked ? { opacity: 0.45 } : undefined}
                   title={locked ? "Requires Advanced Stats" : undefined}
-                  onClick={() => (locked ? setShowTeamLocked(true) : setSection(s.key))}
+                  onClick={() => (locked ? setLockedTab(s.key) : setSection(s.key))}
                 >
                   {s.label}
                   {locked ? " 🔒" : ""}
@@ -287,11 +308,11 @@ export function App() {
             })}
           </div>
 
-          {showTeamLocked && (
+          {lockedTab && LOCKED_TABS[lockedTab] && (
             <div
               role="dialog"
               aria-modal="true"
-              aria-label="Team access requires Advanced Stats"
+              aria-label="Requires Advanced Stats"
               style={{
                 position: "fixed",
                 inset: 0,
@@ -301,26 +322,24 @@ export function App() {
                 justifyContent: "center",
                 zIndex: 40,
               }}
-              onClick={() => setShowTeamLocked(false)}
+              onClick={() => setLockedTab(null)}
             >
               <div className="card stack" style={{ maxWidth: 400, margin: 16 }} onClick={(e) => e.stopPropagation()}>
-                <strong>To set up a team, Advanced Stats must be activated.</strong>
+                <strong>{LOCKED_TABS[lockedTab]!.title}</strong>
                 <p className="muted" style={{ margin: 0 }}>
-                  Team access lets people open your statistics from any browser — and that page is part of
-                  the Advanced Stats upgrade. Set up a domain in the Advanced stats tab first, then invite
-                  your team here.
+                  {LOCKED_TABS[lockedTab]!.body}
                 </p>
                 <div className="row">
                   <button
                     className="btn btn-primary"
                     onClick={() => {
-                      setShowTeamLocked(false);
+                      setLockedTab(null);
                       setSection("advanced");
                     }}
                   >
                     Open Advanced stats
                   </button>
-                  <button className="btn" onClick={() => setShowTeamLocked(false)}>
+                  <button className="btn" onClick={() => setLockedTab(null)}>
                     Close
                   </button>
                 </div>
@@ -341,7 +360,12 @@ export function App() {
                 onOpen={setOpenSite}
               />
             )}
-            {status?.collectorUrl && <Backup />}
+          </div>
+          <div hidden={section !== "backup"}>
+            {/* Paid tier (founder decision 2026-08-05) — the tab is locked without an
+                active domain, and the panel double-checks so a stale section state can
+                never render the tools unpaid. */}
+            {onlineActive && <Backup />}
           </div>
           <div hidden={section !== "advanced"}>
             <TrueReach onStatus={setEdgeState} />
