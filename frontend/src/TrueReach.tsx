@@ -3,21 +3,30 @@ import { api } from "./api";
 import { Button } from "./Button";
 import { CopyButton } from "./CopyButton";
 import { TRUE_REACH } from "./catalogue";
-import { useEntitlement } from "./entitlement";
+import { useEntitlement, type Entitlement } from "./entitlement";
 import { isFirstPartyFor } from "../../shared/src/first-party";
 import { Purchase } from "./Purchase";
 import type { EdgeStatus, Site } from "./types";
 
 /**
- * The True Reach card (DESIGN.md §12), MULTI-DOMAIN since 2026-08-04: each domain runs its
- * own small edge stack (own certificate, own distribution), so domains are added, updated
- * and removed independently — which is exactly the shape of the per-domain subscription.
+ * The Advanced Stats card (DESIGN.md §12), SITE-FIRST since 2026-08-05 (founder: "if I
+ * add stats.A but I want to unlock B, how do I specify that?"). What's sold is a SITE
+ * going online, so the card is a list of the tracked sites: each row is either live,
+ * mid-setup, or shows an Unlock button. The address is derived — a subdomain prefix in
+ * front of the site's own domain — so a wrong domain can't be typed at all, and the
+ * subscription is keyed on the site's domain, surviving any later address rename.
  *
- * The flow is background + resumable (AGENTS.md §5): every state below is re-derived from
- * AWS on each poll, so closing the app mid-validation and coming back lands exactly where
- * things are. DNS stays manual: we show the records; the owner adds them wherever their
- * DNS lives.
+ * Each live site still runs its own small edge stack (own certificate, own
+ * distribution) — added, updated and removed independently, matching the per-site
+ * subscription. But every address serves the SAME dashboard: one login lists every
+ * unlocked site, so ten sites never mean ten pages to check.
+ *
+ * The flow is background + resumable (AGENTS.md §5): every state below is re-derived
+ * from AWS on each poll, so closing the app mid-validation and coming back lands
+ * exactly where things are. DNS stays manual: we show the records; the owner adds them
+ * wherever their DNS lives.
  */
+
 /** A site's address the way isFirstPartyFor sees it: bare hostname, no www/protocol/path. */
 function normalizeSite(siteDomain: string): string {
   return siteDomain
@@ -28,16 +37,13 @@ function normalizeSite(siteDomain: string): string {
     .replace(/[/:].*$/, "");
 }
 
-export function TrueReach(props: { suggestedDomain?: string; onStatus?: (edges: EdgeStatus[]) => void }) {
+export function TrueReach(props: { onStatus?: (edges: EdgeStatus[]) => void }) {
   const [edges, setEdges] = useState<EdgeStatus[] | null>(null);
   const [sites, setSites] = useState<Site[] | null>(null);
-  const [domain, setDomain] = useState("");
   const [err, setErr] = useState<string | null>(null);
   const { onStatus } = props;
 
   useEffect(() => {
-    // The add field validates against the owner's sites (below) — a subscription only
-    // does something for a domain one of their sites lives under.
     api.listSites().then(({ sites: s }) => setSites(s)).catch(() => setSites([]));
   }, []);
 
@@ -70,48 +76,13 @@ export function TrueReach(props: { suggestedDomain?: string; onStatus?: (edges: 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [onStatus]);
 
-  // §12: one paid unit = ONE DOMAIN — the add flow bills the domain being typed.
-  // Pasted URLs are forgiven: protocol, path and trailing dot are stripped.
-  const typed = domain
-    .trim()
-    .toLowerCase()
-    .replace(/^https?:\/\//, "")
-    .replace(/[/?#].*$/, "")
-    .replace(/\.$/, "");
-  const addTarget = typed || (edges?.length ? "" : (props.suggestedDomain ?? ""));
+  if (edges === null || sites === null) return null; // don't flash a teaser before we know the real state
 
-  // Founder feedback 2026-08-05: the field must say WHAT to type. Three honest answers:
-  // any subdomain name you like, it must sit under a site you track (an unrelated domain
-  // would bill and put nothing online), and never the bare domain (that would point the
-  // whole website at the statistics page). Same matcher as the viewer's online gate.
-  const bareSite = sites?.find((s) => normalizeSite(s.domain) === addTarget);
-  const matchedSite = sites?.find((s) => isFirstPartyFor(s.domain, addTarget));
-  const guidance: { ok: boolean; msg?: string } = !addTarget
-    ? { ok: false }
-    : sites === null
-      ? { ok: true } // still loading — don't flash a warning at a valid domain
-      : bareSite
-        ? { ok: false, msg: `That's your website's own address — visitors would land on the statistics page instead of your site. Use a subdomain, like stats.${addTarget}.` }
-        : matchedSite
-          ? { ok: true, msg: `This will put ${matchedSite.domain} online.` }
-          : sites.length === 0
-            ? { ok: false, msg: "First add your website under “Your sites” — the statistics address must be a subdomain of it." }
-            : { ok: false, msg: `This address doesn't belong to any site you track, so it wouldn't put any of them online. Use a subdomain of ${sites.map((s) => normalizeSite(s.domain)).join(", ")} — like stats.${normalizeSite(sites[0]!.domain)}.` };
-
-  const entitlement = useEntitlement(guidance.ok && addTarget ? addTarget : undefined);
-
-  const addDomain = async () => {
-    setErr(null);
-    try {
-      await api.edgeDeploy(addTarget);
-      setDomain("");
-      await refresh();
-    } catch (e) {
-      setErr((e as Error).message);
-    }
-  };
-
-  if (edges === null) return null; // don't flash a teaser before we know the real state
+  const edgeFor = (site: Site) => edges.find((e) => e.domain && isFirstPartyFor(site.domain, e.domain));
+  // An edge no tracked site lives under (site was deleted, or a pre-site-first setup) —
+  // it must stay manageable, or its stack and subscription would be unreachable.
+  const orphans = edges.filter((e) => e.domain && !sites.some((s) => isFirstPartyFor(s.domain, e.domain!)));
+  const dashboard = edges.find((e) => e.phase === "ready" && e.viewerAtEdge && e.domain);
 
   return (
     <div className="card stack">
@@ -123,73 +94,154 @@ export function TrueReach(props: { suggestedDomain?: string; onStatus?: (edges: 
 
       {edges.length === 0 && <p style={{ margin: 0 }}>{TRUE_REACH.pitch}</p>}
 
-      {edges.map((edge) => (
-        <EdgeDomain key={edge.domain} edge={edge} onChanged={refresh} onError={setErr} />
+      {dashboard && (
+        <p style={{ margin: 0 }}>
+          Your statistics page: <span className="mono">https://{dashboard.domain}/</span> — one login
+          there shows every site you've unlocked, for you and everyone under Team access.
+        </p>
+      )}
+
+      {sites.length === 0 && (
+        <p className="muted" style={{ margin: 0 }}>
+          First add your website under “Your sites” — advanced stats are unlocked per site.
+        </p>
+      )}
+
+      {sites.map((site) => (
+        <SiteRow key={site.id} site={site} edge={edgeFor(site)} onChanged={refresh} onError={setErr} />
       ))}
 
-      {/* Add the first — or one more — domain. Entitlement is checked per domain (§12). */}
-      <div className="stack" style={{ gap: 10 }}>
-        {edges.length > 0 && (
-          <div className="section-title" style={{ margin: 0 }}>
-            Add another domain
-          </div>
-        )}
-        <div className="row" style={{ flexWrap: "wrap" }}>
-          <input
-            className="input"
-            style={{ minWidth: 240 }}
-            value={domain}
-            onChange={(e) => setDomain(e.target.value)}
-            placeholder={props.suggestedDomain ?? "stats.your-domain.com"}
-            autoCapitalize="off"
-            spellCheck={false}
-          />
-          <Button
-            className="btn btn-primary"
-            busyLabel="Starting…"
-            disabled={!addTarget || !guidance.ok || !entitlement.entitled}
-            onClick={addDomain}
-          >
-            Set up your domain
-          </Button>
-        </div>
-        <p className="muted" style={{ margin: 0, fontSize: 12 }}>
-          Type a subdomain of a site you track — most people use{" "}
-          <span className="mono">stats.</span>, but any name works (insights, analytics…).
-          It becomes the address of your statistics page and where your tracking script
-          loads from. Not your website's own address, and not an unrelated domain.
-        </p>
-        {guidance.msg && addTarget.includes(".") && (
-          <p className={guidance.ok ? "muted" : undefined} style={{ margin: 0, fontSize: 12, ...(guidance.ok ? {} : { color: "var(--poppy-danger)" }) }}>
-            {guidance.msg}
+      {orphans.map((edge) => (
+        <div key={edge.domain} className="stack" style={{ gap: 6 }}>
+          <p className="muted" style={{ margin: 0, fontSize: 12 }}>
+            No site you track lives under <span className="mono">{edge.domain}</span> — you can remove it
+            below (add the site under “Your sites” if this is unexpected).
           </p>
-        )}
-        {addTarget && guidance.ok && !entitlement.entitled && (
-          <Purchase
-            entitlement={entitlement}
-            target={addTarget}
-            pitch={
-              <>
-                <strong>Your statistics page, on your own address</strong> — open and share it from any
-                browser. And ad blockers stop hiding your visitors: collecting on your own subdomain
-                makes them countable again, with visitor countries included.
-              </>
-            }
-          />
-        )}
-        <p className="muted" style={{ margin: 0, fontSize: 12 }}>
-          {TRUE_REACH.caution}
-        </p>
-      </div>
+          <EdgeCard edge={edge} entitlement={null} onChanged={refresh} onError={setErr} />
+        </div>
+      ))}
+
+      <p className="muted" style={{ margin: 0, fontSize: 12 }}>
+        {TRUE_REACH.caution}
+      </p>
     </div>
   );
 }
 
-/** One domain's whole lifecycle: status, DNS work, update, billing, removal. */
-function EdgeDomain(props: { edge: EdgeStatus; onChanged: () => Promise<unknown>; onError: (m: string | null) => void }) {
-  const { edge } = props;
+/**
+ * One tracked site's row: live / mid-setup / locked. The subscription is checked under
+ * the SITE's domain (the key since 2026-08-05) and, for setups made before that, under
+ * the stats hostname — either one counts as subscribed, so nobody is asked to pay twice.
+ */
+function SiteRow(props: {
+  site: Site;
+  edge: EdgeStatus | undefined;
+  onChanged: () => Promise<unknown>;
+  onError: (m: string | null) => void;
+}) {
+  const { site, edge } = props;
+  const siteDomain = normalizeSite(site.domain);
+  const [prefix, setPrefix] = useState("stats");
+  const entitlement = useEntitlement(siteDomain);
+  const legacy = useEntitlement(edge?.domain);
+  const owned: Entitlement | null = entitlement.entitled ? entitlement : legacy.entitled ? legacy : null;
+
+  if (edge) return <EdgeCard edge={edge} entitlement={owned} onChanged={props.onChanged} onError={props.onError} />;
+
+  // "www" would collide with the website itself; empty is not an address.
+  const cleanPrefix = prefix.trim().toLowerCase();
+  const prefixOk = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$/.test(cleanPrefix) && cleanPrefix !== "www";
+  const address = `${cleanPrefix}.${siteDomain}`;
+
+  return (
+    <div className="card card-2 stack" style={{ marginBottom: 0 }}>
+      <div className="spread">
+        <strong className="mono" style={{ fontSize: 13 }}>
+          {siteDomain}
+        </strong>
+        <span className="badge">not online</span>
+      </div>
+
+      {!owned ? (
+        <Purchase
+          entitlement={entitlement}
+          target={siteDomain}
+          pitch={
+            <>
+              <strong>Put {siteDomain} online</strong> — its statistics page on your own address, open
+              and shareable from any browser. And ad blockers stop hiding its visitors: collecting on
+              your own subdomain makes them countable again, with visitor countries included.
+            </>
+          }
+        />
+      ) : (
+        <>
+          <div className="spread">
+            <span className="badge ok">
+              <span className="dot" /> Subscribed · {siteDomain}
+            </span>
+            {/* REQUIRED by the platform: a visible way to cancel / see what was paid. */}
+            <button className="btn btn-sm" onClick={() => void owned.manage()}>
+              Manage billing
+            </button>
+          </div>
+          <p style={{ margin: 0 }}>
+            Choose the address for its statistics page — any name in front of your domain works
+            (most people keep <span className="mono">stats</span>).
+          </p>
+          <div className="row" style={{ flexWrap: "wrap" }}>
+            <span className="row" style={{ gap: 0 }}>
+              <input
+                className="input mono"
+                style={{ width: 110, textAlign: "right" }}
+                value={prefix}
+                onChange={(e) => setPrefix(e.target.value)}
+                autoCapitalize="off"
+                spellCheck={false}
+                aria-label="subdomain name"
+              />
+              <span className="mono" style={{ fontSize: 13 }}>
+                .{siteDomain}
+              </span>
+            </span>
+            <Button
+              className="btn btn-primary"
+              busyLabel="Starting…"
+              disabled={!prefixOk}
+              onClick={async () => {
+                props.onError(null);
+                try {
+                  await api.edgeDeploy(address);
+                  await props.onChanged();
+                } catch (e) {
+                  props.onError((e as Error).message);
+                }
+              }}
+            >
+              Put it online
+            </Button>
+          </div>
+          {cleanPrefix === "www" && (
+            <p style={{ margin: 0, fontSize: 12, color: "var(--poppy-danger)" }}>
+              www is your website's own address — pick a different name, like stats.
+            </p>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+/** One live (or in-flight) address: status, DNS work, update, billing, removal. */
+function EdgeCard(props: {
+  edge: EdgeStatus;
+  /** The owning subscription, if one is visible — null hides the billing line only. */
+  entitlement: Entitlement | null;
+  onChanged: () => Promise<unknown>;
+  onError: (m: string | null) => void;
+}) {
+  const { edge, entitlement } = props;
   const [confirmingRemove, setConfirmingRemove] = useState(false);
-  const entitlement = useEntitlement(edge.domain);
 
   const act = async (fn: () => Promise<unknown>) => {
     props.onError(null);
@@ -304,10 +356,10 @@ function EdgeDomain(props: { edge: EdgeStatus; onChanged: () => Promise<unknown>
         </p>
       )}
 
-      {edge.phase === "ready" && entitlement.entitled && (
+      {edge.phase === "ready" && entitlement && (
         <div className="spread">
           <span className="badge ok">
-            <span className="dot" /> Subscribed · {edge.domain}
+            <span className="dot" /> Subscribed
           </span>
           {/* REQUIRED by the platform: a visible way to cancel / see what was paid. */}
           <button className="btn btn-sm" onClick={() => void entitlement.manage()}>
@@ -319,8 +371,8 @@ function EdgeDomain(props: { edge: EdgeStatus; onChanged: () => Promise<unknown>
       {edge.phase === "ready" && (
         <div className="spread">
           <span className="muted" style={{ fontSize: 12 }}>
-            Removing this domain keeps every number you've collected — its collection just falls back to
-            the AWS address. Other domains aren't affected.
+            Removing this address keeps every number you've collected — its collection just falls back to
+            the AWS address. Other sites aren't affected.
           </span>
           {confirmingRemove ? (
             <span className="row">

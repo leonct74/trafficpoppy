@@ -62,7 +62,7 @@ export function Purchase(props: {
               {price.note ? <> · {price.note}</> : null} · cancel any time
             </>
           ) : (
-            <>Priced per domain · cancel any time</>
+            <>Priced per site · cancel any time</>
           )}
         </span>
         <Button

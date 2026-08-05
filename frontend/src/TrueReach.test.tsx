@@ -9,7 +9,7 @@ vi.mock("./api", () => ({
   api: { edgeStatus: vi.fn(), edgeDeploy: vi.fn(), edgeRemove: vi.fn(), edgeUpdate: vi.fn(), listSites: vi.fn() },
 }));
 
-// True Reach is a paid tier (§12), so the card now asks the host whether this domain is
+// Advanced Stats is a paid tier (§12), so the card asks the host whether each site is
 // subscribed. Default these tests to "subscribed" and assert the gate separately below.
 vi.mock("./host", async () => {
   const actual = await vi.importActual<typeof import("./host")>("./host");
@@ -43,29 +43,147 @@ beforeEach(async () => {
   const { host } = await import("./host");
   (host.isPurchased as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(true);
   (host.purchaseInfo as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({ price: null, owned: true });
-  // The add field validates against the owner's sites — default to one tracked site.
+  // SITE-FIRST (2026-08-05): the card is a list of the tracked sites — default to one.
   mocked.listSites.mockResolvedValue({
     sites: [{ id: "s1", name: "Olly", domain: "ollydigital.com", createdAt: "2026-01-01" }],
   });
 });
 
-describe("TrueReach card", () => {
-  it("pitches the tier and takes a hostname when nothing is deployed", async () => {
+describe("the site-first card (founder decision 2026-08-05)", () => {
+  beforeEach(() => {
     mocked.edgeStatus.mockResolvedValue({ edges: [] });
-    render(<TrueReach suggestedDomain="stats.ollydigital.com" />);
+  });
+
+  it("pitches the tier and lists each tracked site with its online state", async () => {
+    render(<TrueReach />);
     // The pitch leads with the MAIN benefit (your stats page on your own address,
     // shareable from any browser) and only then the ad-blocker recovery.
     const pitch = await screen.findByText(/statistics page on your own address/i);
     expect(pitch.textContent!.indexOf("your own address")).toBeLessThan(
       pitch.textContent!.indexOf("ad blockers"),
     );
-    expect(screen.getByPlaceholderText("stats.ollydigital.com")).toBeInTheDocument();
+    expect(screen.getByText("ollydigital.com")).toBeInTheDocument();
+    expect(screen.getByText("not online")).toBeInTheDocument();
+  });
+
+  it("a subscribed site derives its address: fixed .domain suffix, editable name in front", async () => {
+    render(<TrueReach />);
+    const input = await screen.findByLabelText("subdomain name");
+    expect(input).toHaveValue("stats"); // the usual choice, pre-filled
+    expect(screen.getByText(".ollydigital.com")).toBeInTheDocument(); // NOT typeable — no wrong domain possible
 
     mocked.edgeDeploy.mockResolvedValue({ operation: "CREATE" });
-    await userEvent.click(screen.getByRole("button", { name: /set up your domain/i }));
+    await userEvent.click(screen.getByRole("button", { name: /put it online/i }));
     await waitFor(() => expect(mocked.edgeDeploy).toHaveBeenCalledWith("stats.ollydigital.com"));
   });
 
+  it("any name works in front of the domain — insights.<site> deploys as typed", async () => {
+    render(<TrueReach />);
+    const input = await screen.findByLabelText("subdomain name");
+    await userEvent.clear(input);
+    await userEvent.type(input, "insights");
+    mocked.edgeDeploy.mockResolvedValue({ operation: "CREATE" });
+    await userEvent.click(screen.getByRole("button", { name: /put it online/i }));
+    await waitFor(() => expect(mocked.edgeDeploy).toHaveBeenCalledWith("insights.ollydigital.com"));
+  });
+
+  it("refuses www — that is the website itself, not a stats address", async () => {
+    render(<TrueReach />);
+    const input = await screen.findByLabelText("subdomain name");
+    await userEvent.clear(input);
+    await userEvent.type(input, "www");
+    expect(await screen.findByText(/www is your website's own address/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /put it online/i })).toBeDisabled();
+  });
+
+  it("with no sites yet, points at the Your sites step — nothing to unlock", async () => {
+    mocked.listSites.mockResolvedValue({ sites: [] });
+    render(<TrueReach />);
+    expect(await screen.findByText(/First add your website/i)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /put it online/i })).not.toBeInTheDocument();
+  });
+
+  it("shows the one-dashboard rule once a statistics page is live", async () => {
+    mocked.edgeStatus.mockResolvedValue({
+      edges: [edge({ phase: "ready", domain: "stats.ollydigital.com", viewerAtEdge: true })],
+    });
+    render(<TrueReach />);
+    expect(await screen.findByText(/Your statistics page:/i)).toBeInTheDocument();
+    expect(screen.getByText(/one login there shows every site/i)).toBeInTheDocument();
+  });
+
+  it("keeps an edge manageable when no tracked site lives under it (orphan)", async () => {
+    mocked.edgeStatus.mockResolvedValue({
+      edges: [edge({ phase: "ready", domain: "stats.somewhere-else.com" })],
+    });
+    render(<TrueReach />);
+    expect(await screen.findByText(/No site you track lives under/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^remove$/i })).toBeInTheDocument();
+  });
+});
+
+describe("the paid gate (§12 — per site, keyed on the site's domain)", () => {
+  it("an unsubscribed site shows Unlock for ITS domain — no address form, no deploy", async () => {
+    const { host } = await import("./host");
+    (host.isPurchased as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(false);
+    mocked.edgeStatus.mockResolvedValue({ edges: [] });
+
+    render(<TrueReach />);
+    expect(await screen.findByText(/Put ollydigital\.com online/i)).toBeInTheDocument();
+    expect(screen.queryByLabelText("subdomain name")).not.toBeInTheDocument();
+    expect(mocked.edgeDeploy).not.toHaveBeenCalled();
+  });
+
+  it("the checkout targets the SITE's domain — the key that survives an address rename", async () => {
+    const { host } = await import("./host");
+    (host.isPurchased as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(false);
+    (host.buyProduct as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
+    mocked.edgeStatus.mockResolvedValue({ edges: [] });
+
+    render(<TrueReach />);
+    await userEvent.click(await screen.findByRole("button", { name: /unlock/i }));
+    await waitFor(() =>
+      expect(host.buyProduct).toHaveBeenCalledWith(expect.any(String), { target: "ollydigital.com" }),
+    );
+  });
+
+  it("offers the unlock at the live per-site price", async () => {
+    const { host } = await import("./host");
+    (host.isPurchased as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(false);
+    (host.purchaseInfo as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
+      price: { amountMinor: 1499, currency: "USD", kind: "subscription", interval: "month" },
+      owned: false,
+    });
+    mocked.edgeStatus.mockResolvedValue({ edges: [] });
+
+    render(<TrueReach />);
+    expect(await screen.findByRole("button", { name: /Unlock · \$14\.99\/month/ })).toBeInTheDocument();
+  });
+
+  it("honours a pre-site-first subscription keyed on the stats hostname — never a second charge", async () => {
+    const { host } = await import("./host");
+    // Old key: entitled for stats.ollydigital.com only, NOT for ollydigital.com.
+    (host.isPurchased as unknown as ReturnType<typeof vi.fn>).mockImplementation(
+      (_p: string, o: { target: string }) => Promise.resolve(o.target === "stats.ollydigital.com"),
+    );
+    mocked.edgeStatus.mockResolvedValue({
+      edges: [edge({ phase: "ready", domain: "stats.ollydigital.com" })],
+    });
+    render(<TrueReach />);
+    expect(await screen.findByText(/subscribed/i)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /unlock/i })).not.toBeInTheDocument();
+  });
+
+  it("PLATFORM RULE: a live subscription always shows a way to manage billing", async () => {
+    mocked.edgeStatus.mockResolvedValue({
+      edges: [edge({ phase: "ready", domain: "stats.ollydigital.com", records: [] })],
+    });
+    render(<TrueReach />);
+    expect(await screen.findByRole("button", { name: /manage billing/i })).toBeInTheDocument();
+  });
+});
+
+describe("the live edge lifecycle (unchanged by site-first)", () => {
   it("shows the validation record with copy buttons while ACM waits (resumable by design)", async () => {
     mocked.edgeStatus.mockResolvedValue({
       edges: [edge({
@@ -107,90 +225,6 @@ describe("TrueReach card", () => {
     render(<TrueReach onStatus={(e) => seen.push(e)} />);
     await waitFor(() => expect(seen.length).toBeGreaterThan(0));
     expect(seen[0]![0]!.domain).toBe("stats.ollydigital.com");
-  });
-});
-
-describe("the add field says what to type (founder feedback 2026-08-05)", () => {
-  beforeEach(() => {
-    mocked.edgeStatus.mockResolvedValue({ edges: [] });
-  });
-
-  it("always explains: a subdomain of a tracked site, any name, becomes the stats address", async () => {
-    render(<TrueReach />);
-    expect(await screen.findByText(/subdomain of a site you track/i)).toBeInTheDocument();
-    expect(screen.getByText(/any name works/i)).toBeInTheDocument();
-    expect(screen.getByText(/address of your statistics page/i)).toBeInTheDocument();
-  });
-
-  it("blocks the bare website address — that would replace the site with the stats page", async () => {
-    render(<TrueReach />);
-    await userEvent.type(await screen.findByPlaceholderText("stats.your-domain.com"), "ollydigital.com");
-    expect(await screen.findByText(/visitors would land on the statistics page/i)).toBeInTheDocument();
-    expect(screen.getByText(/stats\.ollydigital\.com/)).toBeInTheDocument(); // suggests the fix
-    expect(screen.getByRole("button", { name: /set up your domain/i })).toBeDisabled();
-  });
-
-  it("blocks an unrelated domain — it would bill but put no site online", async () => {
-    render(<TrueReach />);
-    await userEvent.type(await screen.findByPlaceholderText("stats.your-domain.com"), "stats.other-site.com");
-    expect(await screen.findByText(/doesn't belong to any site you track/i)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /set up your domain/i })).toBeDisabled();
-    expect(mocked.edgeDeploy).not.toHaveBeenCalled();
-  });
-
-  it("confirms which site a valid subdomain will put online, and forgives a pasted URL", async () => {
-    render(<TrueReach />);
-    await userEvent.type(
-      await screen.findByPlaceholderText("stats.your-domain.com"),
-      "https://insights.ollydigital.com/",
-    );
-    expect(await screen.findByText(/will put ollydigital\.com online/i)).toBeInTheDocument();
-    mocked.edgeDeploy.mockResolvedValue({ operation: "CREATE" });
-    await userEvent.click(screen.getByRole("button", { name: /set up your domain/i }));
-    await waitFor(() => expect(mocked.edgeDeploy).toHaveBeenCalledWith("insights.ollydigital.com"));
-  });
-
-  it("with no sites yet, points at the Your sites step first", async () => {
-    mocked.listSites.mockResolvedValue({ sites: [] });
-    render(<TrueReach />);
-    await userEvent.type(await screen.findByPlaceholderText("stats.your-domain.com"), "stats.new-site.com");
-    expect(await screen.findByText(/First add your website/i)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /set up your domain/i })).toBeDisabled();
-  });
-});
-
-describe("the paid gate (§12 — per domain)", () => {
-  it("will not set up True Reach for a domain that isn't subscribed", async () => {
-    const { host } = await import("./host");
-    (host.isPurchased as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(false);
-    mocked.edgeStatus.mockResolvedValue({ edges: [] });
-
-    render(<TrueReach suggestedDomain="stats.ollydigital.com" />);
-
-    const btn = await screen.findByRole("button", { name: /set up your domain/i });
-    await waitFor(() => expect(btn).toBeDisabled());
-    expect(mocked.edgeDeploy).not.toHaveBeenCalled();
-  });
-
-  it("offers the unlock, priced per domain, when not subscribed", async () => {
-    const { host } = await import("./host");
-    (host.isPurchased as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(false);
-    (host.purchaseInfo as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
-      price: { amountMinor: 1499, currency: "USD", kind: "subscription", interval: "month" },
-      owned: false,
-    });
-    mocked.edgeStatus.mockResolvedValue({ edges: [] });
-
-    render(<TrueReach suggestedDomain="stats.ollydigital.com" />);
-    expect(await screen.findByRole("button", { name: /Unlock · \$14\.99\/month/ })).toBeInTheDocument();
-  });
-
-  it("PLATFORM RULE: a live subscription always shows a way to manage billing", async () => {
-    mocked.edgeStatus.mockResolvedValue({
-      edges: [edge({ phase: "ready", domain: "stats.ollydigital.com", records: [] })],
-    });
-    render(<TrueReach />);
-    expect(await screen.findByRole("button", { name: /manage billing/i })).toBeInTheDocument();
   });
 
   it("offers the edge update when the deployed edge is behind — never applies it itself", async () => {

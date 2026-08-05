@@ -526,6 +526,19 @@ unlocked by holding ≥ 1 active domain subscription and then covers all the own
 priced per capability, never per viewer (unlimited viewers). The free tier keeps unlimited
 sites, unlimited retention, and the desktop dashboard.
 
+**Amended 2026-08-04 (gate 2):** the browser dashboard covers only sites whose own domain is
+unlocked — a site without the upgrade never appears online, for anyone (§7c). "Covers all the
+owner's sites" above is superseded.
+
+**Amended 2026-08-05 (site-first):** the paid unit is unchanged — one subscription per
+domain — but the **entitlement `target` is the SITE's registrable domain** (`example.com`),
+never the stats hostname (`stats.example.com`). The customer buys "advanced stats for site
+B"; the address under it is an implementation detail they may rename without touching the
+subscription. The UI sells it that way too: a per-site list with an Unlock button, the
+address derived afterwards (editable name in front of a fixed `.<site-domain>` suffix), so
+paying for the wrong domain is structurally impossible. Pre-08-05 checkouts (none completed
+live) would be keyed on the hostname; the UI honours either key so no one is charged twice.
+
 **⚠ Two dependencies this pricing creates — both must be respected:**
 1. **Platform has no quantity field.** `Pricing = {kind, amountMinor, currency, interval}` is a
    flat price (verified in `agentspoppy-web/src/app/developer/page.tsx`), so "N × $14.99" is
@@ -964,3 +977,16 @@ materializes.
   would bill per §12 yet put no site online), no sites yet points at "Your sites" first,
   and a valid subdomain confirms which site it will put online. Pasted URLs are
   normalized (protocol/path stripped). Desktop-only change; helper prompt updated.
+  SUPERSEDED same day by site-first (below) — the free-text field is gone entirely.
+- 2026-08-05 — **Advanced stats goes SITE-FIRST (founder: "if I add stats.A but I want to
+  unlock B, how do I specify that?" — then approved the per-site-list proposal).** The
+  tab now lists every tracked site: live sites show their address, DNS records, update
+  banner, billing and remove; locked sites show an Unlock button that checks out FOR THAT
+  SITE. Only after unlocking does the owner pick the address — an editable name in front
+  of a fixed `.<site-domain>` suffix (stats pre-filled; www refused — that's the website
+  itself). Entitlement target re-keyed to the site's registrable domain (§12 amendment);
+  legacy hostname-keyed subscriptions honoured so nobody pays twice. Orphan edges (no
+  tracked site under them) stay listed and removable. The card also states the
+  one-dashboard rule up top once a page is live: every address serves the same dashboard,
+  one login lists every unlocked site — ten sites never mean ten pages (founder concern,
+  answered in-UI). Helper prompt + catalogue scope rewritten to match.

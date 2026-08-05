@@ -62,10 +62,11 @@ export const TRUE_REACH = {
     "CloudFront's free tier covers typical sites.",
   /** Honest scoping — one custom subdomain is first-party for ONE registrable domain (§14, 2026-07-25). */
   scope:
-    "A custom subdomain works for its own registrable domain only: stats.example.com covers " +
-    "example.com and nothing else. The upgrade is per domain — each domain you add gets its own " +
-    "subscription, its own subdomain, and its own setup. Sites without it stay on the free tier: " +
-    "full collection and the desktop app, but no browser dashboard.",
+    "The upgrade is per site: you unlock the site you want, and it gets its own subscription and " +
+    "its own address (a subdomain of that site — stats.example.com covers example.com and nothing " +
+    "else). Every address serves the same statistics page: one login shows all unlocked sites. " +
+    "Sites without the upgrade stay on the free tier: full collection and the desktop app, but no " +
+    "browser dashboard.",
   freeTierNote: "Free tier — served from your AWS address.",
 };
 
