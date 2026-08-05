@@ -79,12 +79,14 @@ export function counterSiteId(pk: string): string {
 /**
  * @param onlineDomains the deployed edge domains (the paid gate) — a site is included
  *        only when one of them is, or is under, the site's own domain.
+ * @param opts.siteIds the owner's explicit pick (from the checkboxes). Omit for "all
+ *        unlocked". It can only ever NARROW the gate, never widen it.
  */
 export async function createBackup(
   db: DynamoDBClient,
   tableName: string,
   onlineDomains: string[],
-  opts?: { dir?: string; now?: Date },
+  opts?: { dir?: string; now?: Date; siteIds?: string[] },
 ): Promise<BackupSummary> {
   // Pass 1: read everything the whitelist allows, remembering which site each row is for.
   const siteRows: { row: Row; id: string; domain: string }[] = [];
@@ -110,10 +112,13 @@ export async function createBackup(
     startKey = page.LastEvaluatedKey as Row | undefined;
   } while (startKey);
 
-  // Pass 2: the paid gate, applied to sites and then inherited by their counters.
-  const included = siteRows.filter((s) => onlineDomains.some((d) => isFirstPartyFor(s.domain, d)));
+  // Pass 2: the paid gate first (never negotiable), then the owner's own selection.
+  const unlocked = siteRows.filter((s) => onlineDomains.some((d) => isFirstPartyFor(s.domain, d)));
+  const unlockedIds = new Set(unlocked.map((s) => s.id));
+  const skippedSites = siteRows.filter((s) => !unlockedIds.has(s.id)).map((s) => s.domain || s.id);
+  const pick = opts?.siteIds;
+  const included = pick ? unlocked.filter((s) => pick.includes(s.id)) : unlocked;
   const includedIds = new Set(included.map((s) => s.id));
-  const skippedSites = siteRows.filter((s) => !includedIds.has(s.id)).map((s) => s.domain || s.id);
   const counters = counterRows.filter((c) => includedIds.has(c.siteId));
   const rows: Row[] = [...included.map((s) => s.row), ...counters.map((c) => c.row)];
 

@@ -1031,3 +1031,13 @@ materializes.
   which is the one moment it cannot be fixed. The founder's own framing stands — a
   determined owner can always read their own table; the tier sells convenience, not
   access.
+- 2026-08-05 — **Backup gets a per-site picker; removal gets its own (5th) tab.** Founder:
+  the button said "Back up all statistics now" without ever showing WHICH sites were
+  covered, and the remove panel — rendered below the tab strip, so it appeared under
+  whichever tab was open — was hard to find. Now: the card lists sites before the button
+  (unlocked = ticked checkbox, locked = disabled + 🔒 "needs Advanced Stats"), the button
+  names what it will do ("Back up ollydigital.com" / "Back up 3 sites"), and the pick
+  rides to the sidecar as `siteIds` which can only NARROW the server-side gate, never
+  widen it. Removal moved into a 5th tab, **deliberately unlocked** — "you can always
+  remove everything" is a platform promise that outranks the paywall, and burying it
+  inside a paid tab would have broken it for free-tier users.

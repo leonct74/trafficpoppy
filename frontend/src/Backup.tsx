@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { api } from "./api";
 import { Button } from "./Button";
 import { CopyButton } from "./CopyButton";
+import { isFirstPartyFor } from "../../shared/src/first-party";
+import type { Site } from "./types";
 
 /**
  * Back up & restore (2026-08-05) — the "teardown export" promised in DESIGN.md §12.
@@ -9,7 +11,9 @@ import { CopyButton } from "./CopyButton";
  * number; it NEVER contains visitor hashes or the salt — those die with the table by
  * design. Restore is two-step confirmed: old rows replace same-key newer ones.
  */
-export function Backup() {
+export function Backup(props: { onlineDomains: string[] }) {
+  const [sites, setSites] = useState<Site[] | null>(null);
+  const [picked, setPicked] = useState<Set<string> | null>(null); // null = "all unlocked"
   const [backups, setBackups] = useState<{ path: string; date: string; bytes: number }[]>([]);
   const [saved, setSaved] = useState<{
     path: string;
@@ -32,7 +36,21 @@ export function Backup() {
 
   useEffect(() => {
     void refresh();
+    api.listSites().then(({ sites: s }) => setSites(s)).catch(() => setSites([]));
   }, []);
+
+  // The same first-party rule the sidecar enforces — shown here so the owner can SEE
+  // which sites a backup would cover before pressing anything. The server re-derives it;
+  // this list is for the eyes, never the gate.
+  const unlocked = (sites ?? []).filter((s) => props.onlineDomains.some((d) => isFirstPartyFor(s.domain, d)));
+  const locked = (sites ?? []).filter((s) => !unlocked.includes(s));
+  const selected = unlocked.filter((s) => picked === null || picked.has(s.id));
+  const toggle = (id: string) => {
+    const next = new Set(picked ?? unlocked.map((s) => s.id));
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    setPicked(next);
+  };
 
   return (
     <div className="card stack">
@@ -48,22 +66,64 @@ export function Backup() {
 
       {err && <div className="banner err">{err}</div>}
 
+      {/* Which sites a backup would cover — named BEFORE the button, never discovered
+          after (founder feedback 2026-08-05). */}
+      {sites !== null && (
+        <div className="stack" style={{ gap: 6 }}>
+          <div className="section-title" style={{ margin: 0 }}>
+            Sites to back up
+          </div>
+          {unlocked.length === 0 && (
+            <p className="muted" style={{ margin: 0, fontSize: 12 }}>
+              No site has Advanced Stats yet — unlock one in the Advanced stats tab to back it up.
+            </p>
+          )}
+          {unlocked.map((s) => (
+            <label key={s.id} className="row" style={{ gap: 8, cursor: "pointer" }}>
+              <input
+                type="checkbox"
+                checked={picked === null || picked.has(s.id)}
+                onChange={() => toggle(s.id)}
+                aria-label={s.domain}
+              />
+              <span className="mono" style={{ fontSize: 13 }}>
+                {s.domain}
+              </span>
+            </label>
+          ))}
+          {locked.map((s) => (
+            <div key={s.id} className="row" style={{ gap: 8, opacity: 0.45 }} title="Requires Advanced Stats">
+              <input type="checkbox" checked={false} disabled aria-label={`${s.domain} (locked)`} />
+              <span className="mono" style={{ fontSize: 13 }}>
+                {s.domain} 🔒
+              </span>
+              <span className="muted" style={{ fontSize: 12 }}>
+                needs Advanced Stats
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+
       <div>
         <Button
           className="btn btn-primary"
           busyLabel="Backing up…"
+          disabled={selected.length === 0}
           onClick={async () => {
             setErr(null);
             setRestored(null);
             try {
-              setSaved(await api.backup());
+              setSaved(await api.backup(selected.map((s) => s.id)));
               await refresh();
             } catch (e) {
               setErr((e as Error).message);
             }
           }}
         >
-          Back up all statistics now
+          {selected.length === 1
+            ? `Back up ${selected[0]!.domain}`
+            : `Back up ${selected.length} sites`}
         </Button>
       </div>
 

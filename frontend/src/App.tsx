@@ -34,6 +34,10 @@ const SECTIONS = [
   { key: "advanced", label: "Advanced stats" },
   { key: "team", label: "Team access" },
   { key: "backup", label: "Back up" },
+  // Founder feedback 2026-08-05: removal sat under whatever tab was open and was hard to
+  // find. Its own tab — and deliberately NOT locked: "you can always remove everything"
+  // is a platform promise, so it must stay reachable on the free tier too.
+  { key: "remove", label: "Remove" },
 ] as const;
 type SectionKey = (typeof SECTIONS)[number]["key"];
 
@@ -365,7 +369,22 @@ export function App() {
             {/* Paid tier (founder decision 2026-08-05) — the tab is locked without an
                 active domain, and the panel double-checks so a stale section state can
                 never render the tools unpaid. */}
-            {onlineActive && <Backup />}
+            {onlineActive && (
+              <Backup
+                onlineDomains={edgeState.filter((e) => e.phase === "ready" && e.domain).map((e) => e.domain!)}
+              />
+            )}
+          </div>
+          <div hidden={section !== "remove"}>
+            {status && status.phase !== "none" && (
+              <RemovePanel
+                disabled={status.inProgress}
+                onRemove={async () => {
+                  await api.teardown();
+                  await refresh();
+                }}
+              />
+            )}
           </div>
           <div hidden={section !== "advanced"}>
             <TrueReach onStatus={setEdgeState} />
@@ -403,16 +422,6 @@ export function App() {
             </Button>
           </div>
         </div>
-      )}
-
-      {status && status.phase !== "none" && !openSite && (
-        <RemovePanel
-          disabled={status.inProgress}
-          onRemove={async () => {
-            await api.teardown();
-            await refresh();
-          }}
-        />
       )}
 
       {/* Layer the depth: plain path above, exact technical detail one click away

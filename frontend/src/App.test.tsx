@@ -113,7 +113,7 @@ describe("the section tabs", () => {
     await screen.findByText(/TrafficPoppy is set up/i);
   };
 
-  it("shows four tabs — sites first, the paid pair (Team access, Back up) on the right", async () => {
+  it("shows five tabs — sites first, the paid pair in the middle, Remove last", async () => {
     await openApp();
     const tabs = screen.getAllByRole("tab");
     expect(tabs.map((t) => t.textContent?.replace(" 🔒", ""))).toEqual([
@@ -121,8 +121,25 @@ describe("the section tabs", () => {
       "Advanced stats",
       "Team access",
       "Back up",
+      "Remove",
     ]);
     expect(tabs[0]).toHaveAttribute("aria-selected", "true");
+  });
+
+  /**
+   * Founder feedback 2026-08-05: removal rendered under whatever tab was open, so it was
+   * hard to find. It has its own tab now — and it must NEVER be locked: "you can always
+   * remove everything" is a platform promise that outranks any paywall.
+   */
+  it("Remove is its own tab and stays reachable without a subscription", async () => {
+    await openApp(); // edgeStatus default: no edges ⇒ nothing unlocked
+    const removeTab = screen.getByRole("tab", { name: /^Remove$/i });
+    expect(removeTab).not.toHaveAttribute("aria-disabled");
+
+    await userEvent.setup().click(removeTab);
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(removeTab).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("heading", { name: /remove/i })).toBeVisible();
   });
 
   it("keeps inactive panels MOUNTED so True Reach polling survives tab switches", async () => {
@@ -203,7 +220,7 @@ describe("the Back up lock", () => {
     expect(await screen.findByRole("dialog")).toBeInTheDocument();
     expect(screen.getByText(/To back up and restore statistics, Advanced Stats must be activated/i)).toBeInTheDocument();
     // The gated panel renders NOTHING while locked — not merely hidden.
-    expect(screen.queryByRole("button", { name: /back up all statistics now/i, hidden: true })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^back up /i, hidden: true })).not.toBeInTheDocument();
   });
 
   it("unlocked once a domain is live: the tab shows the backup tools", async () => {
@@ -216,6 +233,6 @@ describe("the Back up lock", () => {
 
     await userEvent.setup().click(backupTab);
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-    expect(await screen.findByRole("button", { name: /back up all statistics now/i })).toBeVisible();
+    expect(await screen.findByRole("button", { name: /^back up /i })).toBeVisible();
   });
 });

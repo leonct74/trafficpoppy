@@ -371,7 +371,10 @@ const server = createServer(async (req, res) => {
     // domains, read here from the cert registry — never a filter the frontend supplies.
     if (parts[0] === "backup" && parts.length === 1 && method === "POST") {
       const onlineDomains = (await listEdges(edge)).map((e) => e.domain);
-      return json(res, 200, await createBackup(db, tableName, onlineDomains));
+      const body = (await readBody(req)) as { siteIds?: string[] } | undefined;
+      // A supplied pick only NARROWS the gate above — it can never widen it.
+      const siteIds = Array.isArray(body?.siteIds) ? body!.siteIds : undefined;
+      return json(res, 200, await createBackup(db, tableName, onlineDomains, { siteIds }));
     }
     if (parts[0] === "backups" && parts.length === 1 && method === "GET") {
       return json(res, 200, { backups: await listBackups() });
