@@ -51,6 +51,15 @@ export const api = {
   updateSiteSettings: (id: string, settings: { saltDays: number }): Promise<{ saltDays: number }> =>
     host.invokeBackend({ method: "PUT", path: `/sites/${encodeURIComponent(id)}/settings`, body: settings }),
 
+  /** Back up & restore: statistics to/from a local JSON file (sidecar writes it —
+   *  sandboxed frontends cannot download). Scanning a big table can take a while. */
+  backup: (): Promise<{ path: string; rows: number; sites: number; counters: number }> =>
+    host.invokeBackend({ method: "POST", path: "/backup" }, 5 * 60_000),
+  listBackups: (): Promise<{ backups: { path: string; date: string; bytes: number }[] }> =>
+    host.invokeBackend({ method: "GET", path: "/backups" }),
+  restore: (path: string): Promise<{ restored: number }> =>
+    host.invokeBackend({ method: "POST", path: "/restore", body: { path } }, 15 * 60_000),
+
   /** True Reach (custom domains, one small stack each): live state, add, remove, update. */
   edgeStatus: (): Promise<{ edges: EdgeStatus[] }> => host.invokeBackend({ method: "GET", path: "/truereach" }),
   edgeDeploy: (domain: string): Promise<{ operation: string }> =>

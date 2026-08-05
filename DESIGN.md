@@ -997,3 +997,15 @@ materializes.
   collection falls back to the AWS address). Deliberately no automatic teardown and no
   server-side cut-off: the stack is the owner's infrastructure, and the poppy never
   deletes resources on a billing signal — enforcement is the visible nag, v1 by design.
+- 2026-08-05 — **Back up & restore shipped (the §12 "teardown export", built for the
+  certify run — founder: "I would love to save the current captured statistics").**
+  Sidecar `POST /backup` scans the table and writes one deterministic JSON per day to
+  ~/Documents (frontends can't download — platform rule); `GET /backups` lists;
+  `POST /restore` puts rows back (idempotent, file's version wins on key collision,
+  two-step confirmed in the UI; only filenames matching ours are readable — never a
+  generic file reader). THE WHITELIST IS THE PRIVACY CONTRACT and is re-applied on
+  restore so an edited file can't smuggle rows in: kept = site registry (ids intact,
+  snippets keep working) + aggregate day counters; never = salt, visitor-hash rows,
+  live ticker, cert rows. Honest cost: after a restore, returning visitors count as new
+  once per window. Card lives in "Your sites". Manifest gained `dynamodb:Scan`
+  (TrafficPoppy* table only, rating still medium) → restart + re-approval owed.

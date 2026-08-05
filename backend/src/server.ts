@@ -28,6 +28,7 @@ import { CognitoIdentityProviderClient } from "@aws-sdk/client-cognito-identity-
 import { deployEdge, edgeStatusAll, removeEdge, updateEdge, type CertStore, type EdgeCtx } from "./edge";
 import { DeleteItemCommand, PutItemCommand, QueryCommand } from "@aws-sdk/client-dynamodb";
 import { SiteRegistry, lastDays } from "./sites";
+import { createBackup, listBackups, restoreBackup } from "./backup";
 
 const boot = readBootstrap();
 const credentials = brokerCredentialsProvider(boot);
@@ -361,6 +362,21 @@ const server = createServer(async (req, res) => {
         /* already gone */
       }
       return json(res, 200, { ok: true });
+    }
+
+    // Back up & restore (2026-08-05): the statistics leave the table as a local JSON file
+    // before a teardown, and come back into a fresh one. The sidecar writes the file —
+    // frontends are sandboxed and cannot download (platform rule).
+    if (parts[0] === "backup" && parts.length === 1 && method === "POST") {
+      return json(res, 200, await createBackup(db, tableName));
+    }
+    if (parts[0] === "backups" && parts.length === 1 && method === "GET") {
+      return json(res, 200, { backups: await listBackups() });
+    }
+    if (parts[0] === "restore" && parts.length === 1 && method === "POST") {
+      const body = (await readBody(req)) as { path?: string } | undefined;
+      if (!body?.path) return json(res, 400, { error: "Which backup file? path is required." });
+      return json(res, 200, await restoreBackup(db, tableName, body.path));
     }
 
     // True Reach (P5, multi-domain since 2026-08-04): sidecar-requested certificates +

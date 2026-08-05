@@ -38,6 +38,7 @@
           "TagResource",
           "ListTagsOfResource",
           "Query",
+          "Scan",
           "GetItem",
           "PutItem",
           "UpdateItem",

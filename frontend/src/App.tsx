@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "./api";
+import { Backup } from "./Backup";
 import { Button } from "./Button";
 import { Dashboard } from "./Dashboard";
 import { Integrate } from "./Integrate";
@@ -340,6 +341,7 @@ export function App() {
                 onOpen={setOpenSite}
               />
             )}
+            {status?.collectorUrl && <Backup />}
           </div>
           <div hidden={section !== "advanced"}>
             <TrueReach onStatus={setEdgeState} />
