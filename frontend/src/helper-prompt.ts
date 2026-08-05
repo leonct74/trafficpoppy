@@ -45,7 +45,7 @@ THEN THE INSTALL STEP — "${SNIPPET_STEP.title}":
 - I paste it into the <head> of every page I want counted. Tell me WHERE that is for my particular setup — a WordPress theme header or a header plugin, a Shopify theme.liquid, a Wix/Squarespace custom-code box, a Next.js or Astro layout file, Google Tag Manager, whatever fits what I describe. Be specific about the file or screen; that is the step people get stuck on.
 - Nothing appears in the dashboard until the first real visit lands. The site row switches from "Waiting for first visit" to "Receiving data" on its own.
 
-WHAT I'LL SEE, on every tier (the app has three tabs: "Your sites", "Advanced stats", "Team access"):
+WHAT I'LL SEE, on every tier (the app has five tabs: "Your sites", "Advanced stats", "Team access" 🔒, "Back up" 🔒, "Remove" — the two locked ones need the upgrade and explain themselves when pressed):
 - Page views, daily unique visitors, and new-vs-returning visitors within a recognition window I control (1–7 days, default 1 — set on each site's dashboard).
 - Top pages, referrers, campaign tags, browsers, operating systems, screen sizes, views by hour, and a live last-30-minutes ticker.
 - Ranges: Today, 7 days, 30 days, or custom dates; every list exports to CSV.
@@ -59,7 +59,7 @@ THE OPTIONAL UPGRADE — "${TRUE_REACH.label}" (the "Advanced stats" tab):
 - Ten sites never mean ten dashboards: every unlocked address serves the SAME statistics page — one login at any of them lists every unlocked site.
 - If a subscription ends, nothing is torn down behind my back: the address keeps working in my AWS, and the app shows a notice with the two options — renew, or remove the address (all collected numbers stay either way; collection falls back to the AWS address).
 - It also unlocks the "Team access" tab (locked until a domain is live): invite people by email — AWS sends them a temporary password — and grant all sites or only specific ones (the agency case). They can only read, their accounts live in my own AWS, and access is revocable at any time. Sites without the upgrade never appear in the browser, for anyone.
-- And it unlocks the "Back up" tab: tick the unlocked sites and save their numbers to a local file, then restore after a fresh setup — statistics survive a full removal. Sites without the upgrade are listed but not selectable, and any site left out is named on screen. Backups never contain anything about individual visitors.
+- And it unlocks the "Back up" tab: tick the sites to include and save their numbers to a local file, then restore them after a fresh setup — statistics survive a full removal. A subscription alone is enough (the statistics address doesn't have to be set up yet); sites without the upgrade are listed but not selectable, and any site left out of a backup is named on screen. Backups never contain anything about individual visitors.
 - Removing TrafficPoppy has its own "Remove" tab (always available, never locked): it deletes everything it created in my AWS. Back up first if I want to keep the numbers.
 - Recommend it if what I described involves any of these, in this order of weight: (1) checking stats away from one desktop computer, or sharing them with a team, a client, or an agency; (2) ad blockers likely hiding a meaningful share of my audience; (3) wanting country statistics. Otherwise say the free tier is enough — full collection, just desktop-only viewing.
 
