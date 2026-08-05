@@ -271,11 +271,15 @@ export function buildTemplate(): CfnTemplate {
           UserPoolId: { Ref: "ViewerUserPool" },
           GenerateSecret: false,
           ExplicitAuthFlows: ["ALLOW_USER_PASSWORD_AUTH", "ALLOW_REFRESH_TOKEN_AUTH"],
-          // Short access tokens so a revoked viewer loses access in minutes, not days
-          // (revocation is a headline promise of the team feature).
+          // Short access tokens so a revoked viewer loses access within the hour — but a
+          // LONG refresh token (10 years, Cognito's max) so a viewer in good standing never
+          // sees the login again (founder rule 2026-08-04: sessions must not nag). The two
+          // work together: the page silently trades the refresh token for fresh 60-minute
+          // tokens, and the moment the admin removes a viewer their refresh token dies with
+          // the account — so "revoked within the hour" still holds.
           AccessTokenValidity: 60,
           IdTokenValidity: 60,
-          RefreshTokenValidity: 30,
+          RefreshTokenValidity: 3650,
           TokenValidityUnits: { AccessToken: "minutes", IdToken: "minutes", RefreshToken: "days" },
           PreventUserExistenceErrors: "ENABLED",
         },

@@ -38,6 +38,19 @@ describe("the analytics table", () => {
   });
 });
 
+describe("the viewer session contract (founder rule 2026-08-04)", () => {
+  it("long refresh (no login nagging) + short id tokens (revocation bites within the hour)", () => {
+    const client = template.Resources.ViewerUserPoolClient as { Properties: Record<string, unknown> };
+    // A viewer in good standing never sees the login again…
+    expect(client.Properties.RefreshTokenValidity).toBe(3650);
+    expect(client.Properties.ExplicitAuthFlows).toContain("ALLOW_REFRESH_TOKEN_AUTH");
+    // …and a REMOVED viewer still loses access fast: deleting the account kills the
+    // refresh token, and the last-issued id token dies within the hour.
+    expect(client.Properties.IdTokenValidity).toBe(60);
+    expect((client.Properties.TokenValidityUnits as { IdToken: string }).IdToken).toBe("minutes");
+  });
+});
+
 describe("the viewer pool's password policy", () => {
   it("enforces exactly what the login page tells the user (shared/password-policy.ts)", () => {
     // Founder feedback 2026-08-04: a rejection without the rule is a dead end. Both the

@@ -127,6 +127,22 @@ function cognito(target,body){
 function saveTokens(res){
   tok=res.IdToken;
   try{sessionStorage.setItem("tp_tok",tok)}catch(e){}
+  // The long-lived refresh token (only present on a fresh sign-in, not on refreshes):
+  // it silently buys new 60-minute tokens, so a viewer in good standing never sees the
+  // login again — until the admin removes them, which kills this token with the account.
+  if(res.RefreshToken){try{localStorage.setItem("tp_rt",res.RefreshToken)}catch(e){}}
+}
+
+// Trade the refresh token for a fresh session. Resolves true when signed in again.
+function refreshSession(){
+  var rt=null;try{rt=localStorage.getItem("tp_rt")}catch(e){}
+  if(!rt)return Promise.resolve(false);
+  return cognito("InitiateAuth",{AuthFlow:"REFRESH_TOKEN_AUTH",ClientId:CLIENT,AuthParameters:{REFRESH_TOKEN:rt}})
+    .then(function(res){
+      if(!res.AuthenticationResult)return false;
+      saveTokens(res.AuthenticationResult);
+      return true;
+    }).catch(function(){return false});
 }
 
 $("loginForm").addEventListener("submit",function(ev){
@@ -154,16 +170,28 @@ $("loginForm").addEventListener("submit",function(ev){
   }).then(function(){btn.disabled=false;btn.textContent="Sign in"});
 });
 
-function api(path){
+function api(path,retried){
   return fetch(path,{headers:{authorization:"Bearer "+tok}}).then(function(r){
-    if(r.status===401){signout();throw new Error("Session expired — please sign in again.")}
+    if(r.status===401){
+      // The 60-minute token lapsed mid-session: refresh silently ONCE and retry —
+      // the login screen is for revoked or signed-out people, not for the top of every hour.
+      if(!retried){
+        return refreshSession().then(function(ok){
+          if(ok)return api(path,true);
+          signout();throw new Error("Session expired — please sign in again.");
+        });
+      }
+      signout();throw new Error("Session expired — please sign in again.");
+    }
     if(!r.ok)throw new Error("Could not load that.");
     return r.json();
   });
 }
 
 function signout(){
-  tok=null;try{sessionStorage.removeItem("tp_tok")}catch(e){}
+  tok=null;
+  try{sessionStorage.removeItem("tp_tok")}catch(e){}
+  try{localStorage.removeItem("tp_rt")}catch(e){}
   show($("app"),false);show($("login"),true);
 }
 $("signout").addEventListener("click",signout);
@@ -464,7 +492,13 @@ function renderDetail(r,live){
   });
 }
 
-try{var saved=sessionStorage.getItem("tp_tok");if(saved){tok=saved;start()}}catch(e){}
+// Boot: same-tab token first (fast path), else the refresh token silently restores the
+// session — a viewer who signed in last month lands straight on their numbers.
+(function(){
+  var saved=null;try{saved=sessionStorage.getItem("tp_tok")}catch(e){}
+  if(saved){tok=saved;start();return}
+  refreshSession().then(function(ok){if(ok)start()});
+})();
 })();
 </script>
 </body>

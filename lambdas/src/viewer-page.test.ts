@@ -88,4 +88,15 @@ describe("dashboard v2 — professional and fully self-contained", () => {
     expect(page).toContain("URL.createObjectURL");
     expect(page).not.toMatch(/fetch\([^)]*csv/i);
   });
+
+  it("sessions persist: refresh token stored, silently traded for fresh 60-minute tokens", () => {
+    // Founder rule 2026-08-04: the login screen is for revoked or signed-out people,
+    // not for the top of every hour.
+    expect(page).toContain("REFRESH_TOKEN_AUTH");
+    expect(page).toContain('localStorage.setItem("tp_rt"');
+    expect(page).toContain("refreshSession"); // boot restore + the one mid-session retry
+    expect(page).toMatch(/if\(!retried\)/); // 401 → refresh ONCE → retry, never a loop
+    // Sign-out is a real revocation of the local session: both tokens cleared.
+    expect(page).toContain('localStorage.removeItem("tp_rt")');
+  });
 });
