@@ -278,3 +278,45 @@ describe("SiteRegistry.remove", () => {
     expect(del.input.Key.sk.S).toBe("site#ID1");
   });
 });
+
+/**
+ * Conversion goals (§7e). The registry write is the ENTIRE registration surface — the
+ * public collector counts only names it finds here — so validation and the
+ * "never resurrect a deleted site" guard are the properties worth pinning.
+ */
+describe("SiteRegistry.setGoals", () => {
+  it("normalizes, stamps a creation day, and stores the list on the site row", async () => {
+    const { client, sent } = fakeDb();
+    const goals = await reg(client).setGoals("ID1", [
+      { name: "Download", kind: "event" },
+      { name: "thanks", kind: "page", path: "https://x.com/thank-you?a=1" },
+    ]);
+    expect(goals).toEqual([
+      { name: "download", kind: "event", createdAt: "2026-07-18" },
+      { name: "thanks", kind: "page", path: "/thank-you", createdAt: "2026-07-18" },
+    ]);
+    const upd = sent.find((c) => c.name === "UpdateItemCommand")!;
+    expect(upd.input.Key.sk.S).toBe("site#ID1");
+    expect(upd.input.ConditionExpression).toMatch(/attribute_exists/);
+    expect(JSON.parse(upd.input.ExpressionAttributeValues[":g"].S)).toHaveLength(2);
+  });
+
+  it("removes the attribute when the last goal is deleted", async () => {
+    const { client, sent } = fakeDb();
+    await reg(client).setGoals("ID1", []);
+    expect(sent.find((c) => c.name === "UpdateItemCommand")!.input.UpdateExpression).toBe("REMOVE goals");
+  });
+
+  it("refuses an invalid list without writing anything", async () => {
+    const { client, sent } = fakeDb();
+    await expect(reg(client).setGoals("ID1", [{ name: "thanks", kind: "page" }])).rejects.toThrow(/which page/i);
+    expect(sent).toEqual([]);
+  });
+
+  it("reads goals back off the row, and survives a corrupted value", async () => {
+    const good = fakeDb([{ goals: { S: JSON.stringify([{ name: "buy", kind: "event" }]) } }]);
+    expect(await reg(good.client).goals("ID1")).toEqual([{ name: "buy", kind: "event" }]);
+    const bad = fakeDb([{ goals: { S: "not json" } }]);
+    expect(await reg(bad.client).goals("ID1")).toEqual([]);
+  });
+});

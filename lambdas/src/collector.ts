@@ -8,7 +8,7 @@
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import { randomBytes } from "node:crypto";
 import { isDoNotTrack, normalize, type RawEvent } from "./core";
-import { ingest, type IngestDeps } from "./ingest";
+import { ingest, type IngestDeps, type SiteConfig } from "./ingest";
 import { DynamoStore, type Store } from "./store";
 import { trackerHeaders, trackerScript } from "./tracker";
 
@@ -116,15 +116,17 @@ function store(): Store {
 
 const DEFAULT_DAILY_CAP = 100_000;
 
-// The owner's per-site salt window (§6b), cached briefly so the hot path doesn't pay a
-// registry read per beacon. 60s staleness on a 1–7 DAY setting is invisible.
-const SALT_DAYS_TTL_MS = 60_000;
-const saltDaysCache = new Map<string, { value: number | undefined; freshUntil: number }>();
-async function cachedSaltDays(siteId: string): Promise<number | undefined> {
-  const hit = saltDaysCache.get(siteId);
+// The owner's per-site settings — the §6b salt window and the §7e goals — cached briefly
+// so the hot path doesn't pay a registry read per beacon. 60s staleness on a 1–7 DAY
+// setting is invisible; on a freshly added goal it means the owner may press their own
+// button once before it starts counting, which the app's setup screen says out loud.
+const CONFIG_TTL_MS = 60_000;
+const configCache = new Map<string, { value: SiteConfig; freshUntil: number }>();
+async function cachedSiteConfig(siteId: string): Promise<SiteConfig> {
+  const hit = configCache.get(siteId);
   if (hit && hit.freshUntil > Date.now()) return hit.value;
-  const value = await store().getSiteSaltDays(siteId);
-  saltDaysCache.set(siteId, { value, freshUntil: Date.now() + SALT_DAYS_TTL_MS });
+  const value = await store().getSiteConfig(siteId);
+  configCache.set(siteId, { value, freshUntil: Date.now() + CONFIG_TTL_MS });
   return value;
 }
 
@@ -134,7 +136,7 @@ export async function handler(event: FunctionUrlEvent): Promise<LambdaResponse> 
     now: () => new Date(),
     freshSalt: () => randomBytes(16).toString("hex"),
     dailyCap: Number(process.env.DAILY_CAP ?? DEFAULT_DAILY_CAP) || DEFAULT_DAILY_CAP,
-    getSaltDays: cachedSaltDays,
+    getSiteConfig: cachedSiteConfig,
   };
   return handleEvent(event, deps);
 }

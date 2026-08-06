@@ -70,3 +70,27 @@ describe("t.js — the script that runs on the visitor's page", () => {
     expect(h["cache-control"]).toMatch(/max-age=86400/);
   });
 });
+
+/**
+ * Conversion goals (§7e): the whole browser-side of the feature is one delegated listener.
+ * It must report the NAME only, must not count a page view, and must survive a handler
+ * that stops propagation or navigates away — hence the capture phase.
+ */
+describe("t.js — conversion goals", () => {
+  it("listens for presses on anything marked data-tp-goal, in the capture phase", () => {
+    expect(script).toMatch(/addEventListener\("click",function\(ev\)\{/);
+    expect(script).toMatch(/closest\("\[data-tp-goal\]"\)/);
+    expect(script).toMatch(/\},true\);/);
+  });
+
+  it("sends the goal name and nothing about the visitor", () => {
+    expect(script).toMatch(/post\(\{s:site,p:w\.location\.pathname,g:e\.getAttribute\("data-tp-goal"\)\}\)/);
+  });
+
+  it("is served without its comments — reviewable here, ~1 KB on the wire", () => {
+    // (The origin itself contains "//", so look for comment LINES, not the characters.)
+    expect(script.split("\n").some((l) => l.trimStart().startsWith("//"))).toBe(false);
+    expect(script).not.toContain("Opt-out first");
+    expect(script.length).toBeLessThan(1800);
+  });
+});

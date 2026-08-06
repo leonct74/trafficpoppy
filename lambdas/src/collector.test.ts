@@ -8,6 +8,7 @@ function fakeDeps(): HandlerDeps & { calls: { views: number; counters: number; u
     getSalt: async () => "SALT",
     putSaltIfAbsent: async () => {},
     bumpViews: async () => ++calls.views,
+    bumpCounter: async () => ++calls.views,
     bumpCounters: async () => {
       calls.counters++;
     },
@@ -15,14 +16,14 @@ function fakeDeps(): HandlerDeps & { calls: { views: number; counters: number; u
       calls.uniques.push(hash);
       return true;
     },
-    getSiteSaltDays: async () => undefined,
+    getSiteConfig: async () => ({}),
   };
   return {
     store,
     now: () => new Date("2026-07-18T00:00:00Z"),
     freshSalt: () => "SALT",
     dailyCap: 1000,
-    getSaltDays: async () => 1,
+    getSiteConfig: async () => ({ saltDays: 1 }),
     calls,
   };
 }

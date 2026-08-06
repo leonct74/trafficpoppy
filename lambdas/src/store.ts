@@ -9,6 +9,8 @@ import {
   GetItemCommand,
 } from "@aws-sdk/client-dynamodb";
 import type { CounterKey } from "./core";
+import { readGoals } from "../../shared/src/goals";
+import type { SiteConfig } from "./ingest";
 
 export interface Store {
   /** The rotating salt for a window key (a day, or w#<days>#<n>), or undefined if unset. */
@@ -17,15 +19,18 @@ export interface Store {
   putSaltIfAbsent(windowKey: string, salt: string, expiresAt: number): Promise<void>;
   /** Atomic ADD 1 to total#views; returns the new count (for the daily cap). */
   bumpViews(pk: string): Promise<number>;
+  /** Atomic ADD 1 to any single counter row; returns the new count (the goal-event cap). */
+  bumpCounter(pk: string, sk: string): Promise<number>;
   /** Atomic ADD 1 to each counter row. */
   bumpCounters(keys: CounterKey[]): Promise<void>;
   /** Conditional put of a unique's daily-hash row; true iff newly inserted (first seen today). */
   putUniqueIfNew(pk: string, hash: string, expiresAt: number): Promise<boolean>;
   /**
-   * The owner's salt-window choice for a site (§6b baseline), read off the site's registry
-   * row. Undefined when unset or the site doesn't exist — the caller defaults to 1 day.
+   * The owner's settings for a site, read off its registry row in ONE GetItem: the §6b
+   * salt window and the §7e conversion goals. Missing site ⇒ an empty config, which means
+   * "1-day window, no goal may be counted".
    */
-  getSiteSaltDays(siteId: string): Promise<number | undefined>;
+  getSiteConfig(siteId: string): Promise<SiteConfig>;
 }
 
 /** Thrown-name DynamoDB uses when a conditional write's condition isn't met. */
@@ -68,23 +73,30 @@ export class DynamoStore implements Store {
     }
   }
 
-  async getSiteSaltDays(siteId: string): Promise<number | undefined> {
+  async getSiteConfig(siteId: string): Promise<SiteConfig> {
     const out = await this.db.send(
       new GetItemCommand({
         TableName: this.tableName,
         Key: { pk: { S: "sites" }, sk: { S: `site#${siteId}` } },
-        ProjectionExpression: "saltDays",
+        ProjectionExpression: "saltDays, goals",
       }),
     );
     const n = Number(out.Item?.saltDays?.N);
-    return Number.isFinite(n) && n >= 1 ? n : undefined;
+    return {
+      saltDays: Number.isFinite(n) && n >= 1 ? n : undefined,
+      goals: readGoals(out.Item?.goals?.S),
+    };
   }
 
   async bumpViews(pk: string): Promise<number> {
+    return this.bumpCounter(pk, "total#views");
+  }
+
+  async bumpCounter(pk: string, sk: string): Promise<number> {
     const out = await this.db.send(
       new UpdateItemCommand({
         TableName: this.tableName,
-        Key: { pk: { S: pk }, sk: { S: "total#views" } },
+        Key: { pk: { S: pk }, sk: { S: sk } },
         UpdateExpression: "ADD #c :one",
         ExpressionAttributeNames: { "#c": "count" },
         ExpressionAttributeValues: { ":one": { N: "1" } },

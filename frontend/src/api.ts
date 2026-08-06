@@ -3,7 +3,7 @@
 // goes through the bridge.
 
 import { host } from "./host";
-import type { DeploymentStatus, EdgeStatus, LiveStats, Meta, RangeStats, Site, SiteStats, Viewer } from "./types";
+import type { DeploymentStatus, EdgeStatus, Goal, LiveStats, Meta, RangeStats, Site, SiteStats, Viewer } from "./types";
 
 export const api = {
   meta: (): Promise<Meta> => host.invokeBackend({ method: "GET", path: "/meta" }),
@@ -46,6 +46,11 @@ export const api = {
     host.invokeBackend({ method: "PUT", path: `/viewers/${encodeURIComponent(email)}`, body: grants }),
   removeViewer: (email: string): Promise<{ ok: true }> =>
     host.invokeBackend({ method: "DELETE", path: `/viewers/${encodeURIComponent(email)}` }),
+
+  /** §7e: replace a site's conversion goals (validated server-side; the collector counts
+   *  nothing that isn't on this list). */
+  updateSiteGoals: (id: string, goals: Goal[]): Promise<{ goals: Goal[] }> =>
+    host.invokeBackend({ method: "PUT", path: `/sites/${encodeURIComponent(id)}/goals`, body: { goals } }),
 
   /** §6b: the site's returning-visitor recognition window (1–7 days, server-clamped). */
   updateSiteSettings: (id: string, settings: { saltDays: number }): Promise<{ saltDays: number }> =>

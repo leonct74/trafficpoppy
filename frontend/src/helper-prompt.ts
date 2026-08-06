@@ -13,6 +13,35 @@
 // the onboarding, not a footnote.
 
 import { COLLECTED, PRIVACY_PROMISES, SITE_FIELDS, SNIPPET_STEP, TRUE_REACH, buildSnippet } from "./catalogue";
+import type { Goal } from "../../shared/src/goals";
+import type { Site } from "./types";
+
+/**
+ * The Conversions tracker's own helper prompt (§7e): the owner has just created a goal and
+ * now has to add one attribute to the right element on their site. That edit is the single
+ * place this feature can go wrong, so it ships as a prompt for whatever AI already edits
+ * their website — the same "onboarding is a prompt" rule as the site setup above.
+ */
+export function buildGoalPrompt(goal: Goal, site: Site): string {
+  const attr = `data-tp-goal="${goal.name}"`;
+  return `I use TrafficPoppy for privacy-first website statistics on ${site.domain || site.name}, and I've just created a conversion called "${goal.name}". I need you to mark the right element on my site so it gets counted.
+
+WHAT TO DO:
+1. Find the button or link on my site that represents "${goal.name}" — ask me which one if there is any doubt, and never guess between two candidates.
+2. Add this attribute to that element, keeping everything else about it exactly as it is:
+   ${attr}
+   So it ends up looking like: <a href="/download" ${attr}>Download</a> — the attribute goes on the clickable element itself (a, button, or whatever wraps the click).
+3. If the same action exists in several places (a header button and a footer link, say), tell me, and add it to every one of them if I say so — they all count towards the same total.
+4. Tell me the exact file(s) you changed, and how I can check it worked: TrafficPoppy's "Conversions tracker" tab shows a green "Working" badge on the first press.
+
+RULES:
+- Do NOT add any script, tag manager, pixel or library. TrafficPoppy's existing snippet already handles this; the attribute is the entire change.
+- Do NOT change the element's href, onclick, text, classes or styling.
+- The attribute value must be exactly ${goal.name} — the name is what TrafficPoppy counts, and an unregistered name is silently ignored.
+- Nothing about the visitor is recorded — the press is a counter. Don't add anything that identifies people, and don't suggest it.
+
+If the element you need doesn't exist yet, say so plainly instead of inventing one.`;
+}
 
 export function buildHelperPrompt(opts: { collectorUrl: string; trueReachDomain?: string }): string {
   const fieldLines = SITE_FIELDS.map(
@@ -45,7 +74,7 @@ THEN THE INSTALL STEP — "${SNIPPET_STEP.title}":
 - I paste it into the <head> of every page I want counted. Tell me WHERE that is for my particular setup — a WordPress theme header or a header plugin, a Shopify theme.liquid, a Wix/Squarespace custom-code box, a Next.js or Astro layout file, Google Tag Manager, whatever fits what I describe. Be specific about the file or screen; that is the step people get stuck on.
 - Nothing appears in the dashboard until the first real visit lands. The site row switches from "Waiting for first visit" to "Receiving data" on its own.
 
-WHAT I'LL SEE, on every tier (the app has five tabs: "Your sites", "Advanced stats", "Team access" 🔒, "Back up" 🔒, "Remove" — the two locked ones need the upgrade and explain themselves when pressed):
+WHAT I'LL SEE, on every tier (the app has six tabs: "Your sites", "Advanced stats", "Team access" 🔒, "Conversions tracker" 🔒, "Back up" 🔒, "Remove" — the locked ones need the upgrade and explain themselves when pressed):
 - Page views, daily unique visitors, and new-vs-returning visitors within a recognition window I control (1–7 days, default 1 — set on each site's dashboard).
 - Top pages, referrers, campaign tags, browsers, operating systems, screen sizes, views by hour, and a live last-30-minutes ticker.
 - Ranges: Today, 7 days, 30 days, or custom dates; every list exports to CSV.
@@ -61,6 +90,7 @@ THE OPTIONAL UPGRADE — "${TRUE_REACH.label}" (the "Advanced stats" tab):
 - The one real setup failure: choosing an address that is already in use somewhere else (an old CloudFront distribution, another service). AWS refuses to attach a taken name, and the card will show the exact error and keep retrying. The fix is to remove the other use of that name — or pick a different name — never to redo the setup.
 - If a subscription ends, nothing is torn down behind my back: the address keeps working in my AWS, and the app shows a notice with the two options — renew, or remove the address (all collected numbers stay either way; collection falls back to the AWS address).
 - It also unlocks the "Team access" tab (locked until a domain is live): invite people by email — AWS sends them a temporary password — and grant all sites or only specific ones (the agency case). They can only read, their accounts live in my own AWS, and access is revocable at any time. Sites without the upgrade never appear in the browser, for anyone.
+- And it unlocks the "Conversions tracker" tab: I say what counts as a conversion for a site — either "someone reaches a page" (give the address, e.g. /thank-you — this one works backwards, counting visits already recorded) or "someone presses a button or link" (I name it, then paste one attribute like data-tp-goal="download" onto that button; the app hands me a prompt to give to whatever AI edits my site, and the goal's card turns green on the first press). Conversions then show up on the dashboards next to everything else: how many, how many different visitors, and the share of visitors. Still counters only — never who pressed.
 - And it unlocks the "Back up" tab: tick the sites to include and save their numbers to a local file, then restore them after a fresh setup — statistics survive a full removal. A subscription alone is enough (the statistics address doesn't have to be set up yet); sites without the upgrade are listed but not selectable, and any site left out of a backup is named on screen. Backups never contain anything about individual visitors.
 - Removing TrafficPoppy has its own "Remove" tab (always available, never locked): it deletes everything it created in my AWS. Back up first if I want to keep the numbers.
 - Recommend it if what I described involves any of these, in this order of weight: (1) checking stats away from one desktop computer, or sharing them with a team, a client, or an agency; (2) ad blockers likely hiding a meaningful share of my audience; (3) wanting country statistics. Otherwise say the free tier is enough — full collection, just desktop-only viewing.

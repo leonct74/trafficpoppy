@@ -24,6 +24,7 @@ import { DynamoDBClient, QueryCommand } from "@aws-sdk/client-dynamodb";
 import { bearerToken, mayReadSite, verifyJwt, visibleSites, type Jwk, type ViewerClaims } from "./auth";
 import { isFirstPartyFor } from "../../shared/src/first-party";
 import { lastDays, reduceLive, reduceRange, type CounterRow } from "../../shared/src/range";
+import { readGoals, type Goal } from "../../shared/src/goals";
 import { dashboardHtml } from "./viewer-page";
 
 const TABLE = process.env.TABLE_NAME ?? "";
@@ -47,7 +48,7 @@ export interface HttpResponse {
 
 /** Everything the router needs from the outside world — injected so routing is unit-testable. */
 export interface ViewerDeps {
-  listSites(): Promise<{ id: string; name: string; domain: string }[]>;
+  listSites(): Promise<{ id: string; name: string; domain: string; goals?: Goal[] }[]>;
   dayRows(siteId: string, day: string): Promise<CounterRow[]>;
   recentRows(siteId: string): Promise<CounterRow[]>;
   /**
@@ -153,7 +154,9 @@ export async function route(req: HttpRequest, deps: ViewerDeps): Promise<HttpRes
       Promise.all(window.map((d) => deps.dayRows(siteId, d))),
       Promise.all(prevWindow.map((d) => deps.dayRows(siteId, d))),
     ]);
-    return json(200, { range: reduceRange(siteId, window, perDay, perPrevDay) });
+    // The site's goals name its counters (§7e) — same reduction as the desktop app, so
+    // both dashboards report the same conversions from the same rows.
+    return json(200, { range: reduceRange(siteId, window, perDay, perPrevDay, site.goals ?? []) });
   }
 
   return NOT_FOUND();
@@ -232,7 +235,12 @@ const liveDeps: ViewerDeps = {
       }),
     );
     return (out.Items ?? [])
-      .map((it) => ({ id: it.siteId?.S ?? "", name: it.name?.S ?? "", domain: it.domain?.S ?? "" }))
+      .map((it) => ({
+        id: it.siteId?.S ?? "",
+        name: it.name?.S ?? "",
+        domain: it.domain?.S ?? "",
+        goals: readGoals(it.goals?.S),
+      }))
       .filter((s) => s.id);
   },
 };

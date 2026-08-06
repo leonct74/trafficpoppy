@@ -111,3 +111,18 @@ describe("dashboard v2 — professional and fully self-contained", () => {
     expect(page).toContain('localStorage.removeItem("tp_rt")');
   });
 });
+
+/** Conversions (§7e) must reach the ONLINE page too — the team reads their numbers there. */
+describe("conversions on the browser dashboard", () => {
+  const page = dashboardHtml({ region: "eu-west-1", userPoolClientId: "client123" });
+
+  it("renders a Conversions card from the range's goals", () => {
+    expect(page).toContain("<h2>Conversions</h2>");
+    expect(page).toContain("var gs=r.goals||[]");
+  });
+
+  it("shows how many people converted, not who — and says what the rate compares", () => {
+    expect(page).toContain("visitors");
+    expect(page).toContain("Rate compares converting visitors with unique visitors");
+  });
+});

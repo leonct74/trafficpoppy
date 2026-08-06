@@ -113,13 +113,14 @@ describe("the section tabs", () => {
     await screen.findByText(/TrafficPoppy is set up/i);
   };
 
-  it("shows five tabs — sites first, the paid pair in the middle, Remove last", async () => {
+  it("shows six tabs — sites first, the paid ones in the middle, Remove last", async () => {
     await openApp();
     const tabs = screen.getAllByRole("tab");
     expect(tabs.map((t) => t.textContent?.replace(" 🔒", ""))).toEqual([
       "Your sites",
       "Advanced stats",
       "Team access",
+      "Conversions tracker",
       "Back up",
       "Remove",
     ]);

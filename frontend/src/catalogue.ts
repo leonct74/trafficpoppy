@@ -56,7 +56,8 @@ export const TRUE_REACH = {
     "Put your statistics page on your own address (stats.your-site.com) — open it from any " +
     "browser and share it with your team — invite them, control who sees which site. Collection " +
     "moves to your subdomain too, so ad blockers can't hide your visitors — and you see " +
-    "visitor countries.",
+    "visitor countries. It also turns on conversion tracking: count the visits to a page " +
+    "that matters (a thank-you page) or the presses of a button or link.",
   caution:
     "You'll be asked to add two DNS records at your domain host. AWS-side cost: cents — " +
     "CloudFront's free tier covers typical sites.",
@@ -77,6 +78,8 @@ export const COLLECTED = [
   "the campaign tags utm_source, utm_medium and utm_campaign — exactly those three, everything else dropped",
   "a viewport size bucket, and a coarse browser + operating-system family",
   "with Advanced Stats only: the visitor's country",
+  "if you set up conversions: that a page you named was reached, or a button or link you " +
+    "marked was pressed — the name and a count, never who did it",
 ];
 
 /** The privacy invariants (DESIGN.md §3, §4, §6; enforced in lambdas/src/core.ts and pinned by

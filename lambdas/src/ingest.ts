@@ -7,9 +7,18 @@
 
 import { createHash } from "node:crypto";
 import { counterKeys, dayPk, recentPk, uniqPk, type NormalizedEvent } from "./core";
+import { goalSk, goalUniqPk, goalUniqueSk, type Goal } from "../../shared/src/goals";
 import type { Store } from "./store";
 
 const DAY_MS = 86_400_000;
+
+/** The owner's per-site settings the hot path needs (one registry read, cached briefly). */
+export interface SiteConfig {
+  /** §6b salt window in days (1–7). Absent/invalid ⇒ 1. */
+  saltDays?: number;
+  /** §7e conversion goals the owner registered. Absent ⇒ nothing may be counted as a goal. */
+  goals?: Goal[];
+}
 
 export interface IngestDeps {
   store: Store;
@@ -24,10 +33,10 @@ export interface IngestDeps {
    */
   dailyCap: number;
   /**
-   * The owner's salt window for a site in days (§6b baseline, 1–7). The handler supplies a
-   * short-cached registry read; ingest clamps whatever arrives. Absent/invalid ⇒ 1 day.
+   * The owner's settings for a site: the §6b salt window and the §7e goals. ONE registry
+   * read, short-cached by the handler; ingest clamps and re-checks whatever arrives.
    */
-  getSaltDays: (siteId: string) => Promise<number | undefined>;
+  getSiteConfig: (siteId: string) => Promise<SiteConfig>;
 }
 
 /** The UTC calendar day (YYYY-MM-DD) — the unit every counter partition is keyed by. */
@@ -99,6 +108,31 @@ export interface IngestResult {
 }
 
 /**
+ * One conversion (§7e): the goal's count, plus a once-per-window converter check that
+ * reuses the SAME salted hash the daily-unique check uses — so "12 presses from 5 people"
+ * costs one extra conditional put and adds no new knowledge about anyone. The hash rows
+ * die with the window's salt, exactly like the visitor rows.
+ */
+async function countConversion(
+  deps: IngestDeps,
+  siteId: string,
+  day: string,
+  goal: string,
+  hash: string,
+  expiresAt: number,
+): Promise<void> {
+  const pk = dayPk(siteId, day);
+  const firstForVisitor = await deps.store.putUniqueIfNew(
+    goalUniqPk(siteId, day),
+    `${goal}|${hash}`,
+    expiresAt,
+  );
+  const keys = [{ pk, sk: goalSk(goal) }];
+  if (firstForVisitor) keys.push({ pk, sk: goalUniqueSk(goal) });
+  await deps.store.bumpCounters(keys);
+}
+
+/**
  * Apply one pageview. `ip` and `ua` are used only to compute the window hash and are not
  * persisted. Returns what happened, for the handler's response + logging (never the hash).
  */
@@ -110,6 +144,28 @@ export async function ingest(
 ): Promise<IngestResult> {
   const day = utcDay(deps.now());
   const pk = dayPk(ev.siteId, day);
+  // The owner's settings (§6b window + §7e goals): ONE registry read, cached by the caller.
+  const config = await deps.getSiteConfig(ev.siteId);
+  const saltDays = clampSaltDays(config.saltDays);
+  const window = saltWindow(deps.now(), saltDays);
+  const expiresAt = window.endsAtSec + (2 * DAY_MS) / 1000;
+  const goals = config.goals ?? [];
+
+  // ── a conversion-goal event (§7e) — never a pageview ──────────────────────────────
+  if (ev.goal) {
+    // REGISTERED GOALS ONLY. The endpoint is public, so anyone can post any name; only
+    // names the owner created in the app may write a row. Unknown ⇒ silently nothing.
+    if (!goals.some((g) => g.kind === "event" && g.name === ev.goal)) {
+      return { counted: false, capped: false, newVisitor: false };
+    }
+    // Its own cheap cap gauge, so a flood of goal beacons costs ~1 write each and can
+    // never inflate page views.
+    const hits = await deps.store.bumpCounter(pk, "total#events");
+    if (hits > deps.dailyCap) return { counted: false, capped: true, newVisitor: false };
+    const salt = await currentSalt(deps, window);
+    await countConversion(deps, ev.siteId, day, ev.goal, visitorHash(salt, ip, ua, ev.siteId), expiresAt);
+    return { counted: true, capped: false, newVisitor: false };
+  }
 
   // Bump the day's total first — its returned value is our cap gauge. One write even when
   // capped, so an abusive flood costs ~1 write/hit instead of the full ~8-row fan-out.
@@ -130,17 +186,23 @@ export async function ingest(
   detail.push({ pk: recentPk(ev.siteId), sk: `t#${minute}`, expiresAt: Math.floor(nowMs / 1000) + 7200 });
   await deps.store.bumpCounters(detail);
 
-  // The salt window (§6b baseline): owner-chosen 1–7 days, clamped server-side so no
-  // stored value can ever exceed the consent-free ceiling. Default and floor: 1 day.
-  const saltDays = clampSaltDays(await deps.getSaltDays(ev.siteId));
-  const window = saltWindow(deps.now(), saltDays);
-
   // Daily unique: conditional put of the salted hash; only the first hit of the day counts.
   // Hash rows age out with the window (+2d grace), NOT a fixed 40 days — while the salt is
   // shared inside a window, the rows are the only place the hash exists at rest.
+  // (The window itself was derived above, from the same single settings read.)
   const salt = await currentSalt(deps, window);
   const hash = visitorHash(salt, ip, ua, ev.siteId);
-  const expiresAt = window.endsAtSec + (2 * DAY_MS) / 1000;
+
+  // Page goals (§7e): a registered path counts as a conversion on the pageview itself —
+  // no second request from the browser, and nothing extra is collected. Their totals are
+  // ALSO derivable from the page counters, which is what makes page goals retroactive;
+  // these rows exist so "how many different people" is answerable too.
+  for (const g of goals) {
+    if (g.kind === "page" && g.path === ev.path) {
+      await countConversion(deps, ev.siteId, day, g.name, hash, expiresAt);
+    }
+  }
+
   const newVisitor = await deps.store.putUniqueIfNew(uniqPk(ev.siteId, day), hash, expiresAt);
   if (newVisitor) {
     const bumps = [{ pk, sk: "total#uniques" }];

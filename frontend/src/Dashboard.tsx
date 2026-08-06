@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "./api";
 import { Button } from "./Button";
-import type { LiveStats, RangeStats, Site } from "./types";
+import type { GoalStats, LiveStats, RangeStats, Site } from "./types";
 
 /**
  * The per-site dashboard, P3 quality bar (DESIGN.md §13): range picker, headline metrics
@@ -175,6 +175,7 @@ export function Dashboard(props: { site: Site; onBack: () => void; onIntegrate?:
 
       {range?.receiving && (
         <>
+          {!!range.goals?.length && <GoalsCard goals={range.goals} uniques={range.uniques} days={days} />}
           <Movers current={range.topPages} prev={range.prev?.topPages} what="pages" />
           {range.countries.length > 0 && (
             <BarList
@@ -442,6 +443,53 @@ export function countryLabel(code: string): string {
   } catch {
     return `${flag} ${code}`;
   }
+}
+
+/**
+ * Conversions (§7e) — above every breakdown, because "did the thing I want happen?" beats
+ * any list of pages. Set up in the Conversions tracker tab; this is where they're read.
+ */
+function GoalsCard(props: { goals: GoalStats[]; uniques: number; days: number }) {
+  return (
+    <div className="card card-2 stack" style={{ marginBottom: 0 }}>
+      <div className="section-title" style={{ margin: 0 }}>
+        Conversions{" "}
+        <span className="muted" style={{ fontWeight: 400 }}>
+          {props.days === 1 ? "today" : `last ${props.days} days`}
+        </span>
+      </div>
+      {props.goals.map((g) => {
+        const people = g.converters || g.conversions;
+        const rate = props.uniques > 0 ? (people / props.uniques) * 100 : null;
+        return (
+          <div key={g.name} className="spread" style={{ gap: 12 }}>
+            <span style={{ fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {g.kind === "page" ? "📄" : "🖱️"} {g.name}{" "}
+              <span className="muted mono" style={{ fontSize: 11 }}>
+                {g.kind === "page" ? g.path : ""}
+              </span>
+            </span>
+            <span className="row" style={{ gap: 12 }}>
+              {g.converters > 0 && (
+                <span className="muted" style={{ fontSize: 12 }} title="Different visitors who converted">
+                  {g.converters.toLocaleString()} visitors
+                </span>
+              )}
+              {rate !== null && (
+                <span className="muted" style={{ fontSize: 12 }}>
+                  {rate < 10 ? rate.toFixed(1) : Math.round(rate)}%
+                </span>
+              )}
+              <span className="mono" style={{ fontSize: 13 }}>
+                {g.conversions.toLocaleString()}
+              </span>
+              <Delta now={g.conversions} prev={g.prevConversions} />
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
 }
 
 /** Pages rising and falling vs the previous window — the "what changed?" read. */

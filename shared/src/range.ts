@@ -9,10 +9,31 @@
 // Everything here is PURE: rows in, stats out. No AWS SDK, no clock, no I/O — so it is
 // exhaustively testable and safe to bundle into a Lambda.
 
+import { goalSk, goalUniqueSk, type Goal, type GoalKind } from "./goals";
+
 /** One raw counter row as both readers fetch it: the sort key and its accumulated count. */
 export interface CounterRow {
   sk: string;
   count: number;
+}
+
+/** One conversion goal's numbers for the picked range (§7e). */
+export interface GoalStats {
+  name: string;
+  kind: GoalKind;
+  /** Page goals: the path that counts. */
+  path?: string;
+  createdAt?: string;
+  /** How many conversions happened (page views of the path, or presses of the element). */
+  conversions: number;
+  /**
+   * How many DIFFERENT visitors converted, within the site's recognition window. Only
+   * counted since the goal was created, so it stays 0 for retroactive history — the UI
+   * says so rather than pretending it's zero people.
+   */
+  converters: number;
+  /** The same goal in the previous window of equal length — the Δ chip. */
+  prevConversions: number;
 }
 
 /** The live-ticker read: views per minute over the last half hour, oldest first. */
@@ -52,6 +73,13 @@ export interface RangeStats {
    */
   newVisitors: number;
   returningVisitors: number;
+  /**
+   * Conversion goals (§7e), in the order the owner arranged them. Empty unless the site
+   * has goals. A page goal's conversions come from the page counters, so it reports history
+   * from BEFORE it was created — the app says which numbers are retroactive and which start
+   * on the day the goal was made.
+   */
+  goals: GoalStats[];
   /**
    * Traffic flow (§7d), aggregate counts only. entries: source → landing path, where
    * source is a referrer hostname or "direct". edges: same-site path → path transitions.
@@ -122,14 +150,36 @@ export function reducePrevWindow(perDay: CounterRow[][]): NonNullable<RangeStats
 }
 
 /**
+ * One goal's numbers out of the summed rows (§7e).
+ *
+ * A PAGE goal reads the page counter it is defined by, which is why it works retroactively:
+ * the number was already there, the goal just names it. An EVENT goal reads its own counter,
+ * which only exists from the day it was registered. Both read the same converter counter.
+ */
+function reduceGoal(goal: Goal, sums: Map<string, number>, prev: Map<string, number>): GoalStats {
+  const key = goal.kind === "page" && goal.path ? `page#${goal.path}` : goalSk(goal.name);
+  return {
+    name: goal.name,
+    kind: goal.kind,
+    ...(goal.path ? { path: goal.path } : {}),
+    ...(goal.createdAt ? { createdAt: goal.createdAt } : {}),
+    conversions: sums.get(key) ?? 0,
+    converters: sums.get(goalUniqueSk(goal.name)) ?? 0,
+    prevConversions: prev.get(key) ?? 0,
+  };
+}
+
+/**
  * Reduce a range: one row-set per day (oldest first), plus the preceding window for deltas.
- * `days` and `perDay` must be the same length and in the same order.
+ * `days` and `perDay` must be the same length and in the same order. `goals` are the site's
+ * registered conversion goals — absent, the goals list simply comes back empty.
  */
 export function reduceRange(
   siteId: string,
   days: string[],
   perDay: CounterRow[][],
   perPrevDay: CounterRow[][] = [],
+  goals: Goal[] = [],
 ): RangeStats {
   const series: RangeStats["days"] = [];
   for (let i = 0; i < days.length; i++) {
@@ -138,6 +188,7 @@ export function reduceRange(
     series.push({ day: days[i]!, views: one("total#views"), uniques: one("total#uniques") });
   }
   const sums = sumRows(perDay);
+  const prevSums = sumRows(perPrevDay);
 
   return {
     siteId,
@@ -160,6 +211,7 @@ export function reduceRange(
     hours: Array.from({ length: 24 }, (_, h) => sums.get(`hour#${String(h).padStart(2, "0")}`) ?? 0),
     newVisitors: sums.get("total#new") ?? 0,
     returningVisitors: sums.get("total#returning") ?? 0,
+    goals: goals.map((g) => reduceGoal(g, sums, prevSums)),
     entries: rankPairs(sums, "entry#", 30).map(({ a, b, count }) => ({ source: a, path: b, count })),
     edges: rankPairs(sums, "edge#", 60).map(({ a, b, count }) => ({ from: a, to: b, count })),
     prev: perPrevDay.length > 0 ? reducePrevWindow(perPrevDay) : undefined,

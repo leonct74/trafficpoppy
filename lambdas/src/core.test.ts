@@ -227,3 +227,25 @@ describe("traffic-flow counters — aggregate edges, never a visitor trail", () 
     expect(sks).toContain("edge#/a#/b");
   });
 });
+
+/** Conversion goals (§7e): a goal event carries a NAME and nothing else. */
+describe("normalize — goal events", () => {
+  it("is a goal, not a page view, and keeps no page detail whatsoever", () => {
+    const ev = normalize(
+      { s: "s1", p: "/pricing", g: "Download", r: "https://news.example.com/x", q: "?utm_source=mail" },
+      { doNotTrack: false, userAgent: "Mozilla/5.0 Chrome/120" },
+    )!;
+    expect(ev.goal).toBe("download");
+    expect(ev.referrerHost).toBeUndefined();
+    expect(ev.utm).toEqual({});
+    expect(ev.country).toBeUndefined();
+  });
+
+  it("an unusable name counts NOTHING — never a phantom page view", () => {
+    expect(normalize({ s: "s1", p: "/x", g: "###" }, { doNotTrack: false })).toBeNull();
+  });
+
+  it("still obeys the opt-out signal", () => {
+    expect(normalize({ s: "s1", p: "/x", g: "download" }, { doNotTrack: true })).toBeNull();
+  });
+});

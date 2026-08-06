@@ -39,6 +39,24 @@ export interface Site {
   createdAt: string;
   /** The §6b recognition window in days (1–7). Absent ⇒ 1 (the strict default). */
   saltDays?: number;
+  /** The site's conversion goals (§7e). */
+  goals?: Goal[];
+}
+
+/** A conversion goal. The definition itself lives in shared/src/goals.ts. */
+export type { Goal, GoalKind } from "../../shared/src/goals";
+import type { Goal } from "../../shared/src/goals";
+
+/** One goal's numbers for the picked range — mirrors GoalStats in shared/src/range.ts. */
+export interface GoalStats {
+  name: string;
+  kind: "page" | "event";
+  path?: string;
+  createdAt?: string;
+  conversions: number;
+  /** Distinct visitors who converted, within the site's recognition window. */
+  converters: number;
+  prevConversions: number;
 }
 
 /** The dashboard's range read. Mirrors RangeStats in backend/src/sites.ts. */
@@ -67,6 +85,8 @@ export interface RangeStats {
   /** Of the range's daily uniques: first-seen vs seen-earlier within the §6b window. */
   newVisitors: number;
   returningVisitors: number;
+  /** Conversion goals (§7e) — empty unless the site has any (absent on older sidecars). */
+  goals?: GoalStats[];
   /** Traffic flow (§7d) — aggregate counts only, never individual visitors. */
   entries: { source: string; path: string; count: number }[];
   edges: { from: string; to: string; count: number }[];

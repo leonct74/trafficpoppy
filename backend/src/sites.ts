@@ -15,6 +15,7 @@ import {
 } from "@aws-sdk/client-dynamodb";
 import { randomBytes } from "node:crypto";
 import { reduceLive, reduceRange, type LiveStats, type RangeStats } from "../../shared/src/range";
+import { MAX_GOALS, parseGoals, readGoals, type Goal } from "../../shared/src/goals";
 
 export interface Site {
   id: string;
@@ -23,6 +24,8 @@ export interface Site {
   createdAt: string;
   /** The §6b baseline salt window in days (1–7). Absent ⇒ 1 (today's behavior). */
   saltDays?: number;
+  /** The site's conversion goals (§7e). Empty until the owner creates one. */
+  goals?: Goal[];
 }
 
 /** The §6b consent-free ceiling — mirrors lambdas/src/ingest.ts, which also clamps. */
@@ -78,6 +81,7 @@ export class SiteRegistry {
         domain: it.domain?.S ?? "",
         createdAt: it.createdAt?.S ?? "",
         saltDays: it.saltDays?.N ? clampSaltDays(it.saltDays.N) : undefined,
+        goals: readGoals(it.goals?.S),
       }))
       .filter((s) => s.id)
       .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
@@ -104,6 +108,42 @@ export class SiteRegistry {
       }),
     );
     return days;
+  }
+
+  /**
+   * Replace a site's conversion goals (§7e). Validated HERE, on the trusted side: the
+   * collector refuses any name that isn't on this list, so this write is the whole
+   * registration surface. Stored as one JSON attribute on the site row, which means goals
+   * ride along in backups and survive a restore with the site they belong to.
+   */
+  async setGoals(id: string, goals: unknown): Promise<Goal[]> {
+    const parsed = parseGoals(goals).map((g) => ({ ...g, createdAt: g.createdAt ?? this.nowIso().slice(0, 10) }));
+    await this.db.send(
+      new UpdateItemCommand({
+        TableName: this.tableName,
+        Key: { pk: { S: SITES_PK }, sk: { S: siteSk(id) } },
+        ConditionExpression: "attribute_exists(sk)", // never resurrect a deleted site
+        ...(parsed.length === 0
+          ? { UpdateExpression: "REMOVE goals" }
+          : {
+              UpdateExpression: "SET goals = :g",
+              ExpressionAttributeValues: { ":g": { S: JSON.stringify(parsed) } },
+            }),
+      }),
+    );
+    return parsed;
+  }
+
+  /** One site's registered goals — what the range read needs to name its counters. */
+  async goals(id: string): Promise<Goal[]> {
+    const out = await this.db.send(
+      new QueryCommand({
+        TableName: this.tableName,
+        KeyConditionExpression: "pk = :p AND sk = :s",
+        ExpressionAttributeValues: { ":p": { S: SITES_PK }, ":s": { S: siteSk(id) } },
+      }),
+    );
+    return readGoals(out.Items?.[0]?.goals?.S);
   }
 
   async create(input: { name: string; domain: string }, id = newSiteId()): Promise<Site> {
@@ -178,13 +218,14 @@ export class SiteRegistry {
    * by design (DESIGN.md §4). The UI labels it accordingly.
    */
   async rangeStats(siteId: string, days: string[], prevDays: string[] = []): Promise<RangeStats> {
-    const [perDay, perPrevDay] = await Promise.all([
+    const [perDay, perPrevDay, goals] = await Promise.all([
       Promise.all(days.map((d) => this.dayRows(siteId, d))),
       Promise.all(prevDays.map((d) => this.dayRows(siteId, d))),
+      this.goals(siteId),
     ]);
     // The reduction itself lives in shared/ so the viewer Lambda (browser dashboard, §7b)
     // computes byte-identical numbers from the same rows. Two implementations would drift.
-    return reduceRange(siteId, days, perDay, perPrevDay);
+    return reduceRange(siteId, days, perDay, perPrevDay, goals);
   }
 
   /**
@@ -210,4 +251,6 @@ export class SiteRegistry {
  * every existing importer of ./sites keeps working unchanged.
  */
 export type { LiveStats, RangeStats } from "../../shared/src/range";
+export { MAX_GOALS };
+export type { Goal };
 export { lastDays } from "../../shared/src/range";

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "./api";
 import { Backup } from "./Backup";
 import { Button } from "./Button";
+import { Conversions } from "./Conversions";
 import { Dashboard } from "./Dashboard";
 import { PaidProbe } from "./entitlement";
 import { Integrate } from "./Integrate";
@@ -34,6 +35,9 @@ const SECTIONS = [
   { key: "sites", label: "Your sites" },
   { key: "advanced", label: "Advanced stats" },
   { key: "team", label: "Team access" },
+  // Conversions tracker (§7e, founder 2026-08-07): paid, and placed after Team access —
+  // it belongs with the other upgrade tabs, before the housekeeping ones.
+  { key: "conversions", label: "Conversions tracker" },
   { key: "backup", label: "Back up" },
   // Founder feedback 2026-08-05: removal sat under whatever tab was open and was hard to
   // find. Its own tab — and deliberately NOT locked: "you can always remove everything"
@@ -53,6 +57,13 @@ const LOCKED_TABS: Partial<Record<SectionKey, { title: string; body: string }>> 
   },
   // Founder decision 2026-08-05: Back up & restore is part of the paid tier (supersedes
   // the §12 "free teardown export" line — recorded in DESIGN.md).
+  conversions: {
+    title: "To track conversions, Advanced Stats must be activated.",
+    body:
+      "Conversions count the things you want visitors to do — reach a thank-you page, press a " +
+      "download or buy button. They're part of the Advanced Stats upgrade: unlock a site in the " +
+      "Advanced stats tab, then set its conversions up here.",
+  },
   backup: {
     title: "To back up and restore statistics, Advanced Stats must be activated.",
     body:
@@ -90,11 +101,11 @@ export function App() {
   );
   const paidDomains = allSites.map((s) => s.domain).filter((d) => paid[d]);
   /**
-   * Back up unlocks on the SUBSCRIPTION, not on a deployed address (founder 2026-08-05:
-   * "even if I unlock 3 domains subscriptions, I can only backup ollydigital.com").
-   * Paying and then waiting on DNS must never hold back a backup.
+   * Back up and Conversions unlock on the SUBSCRIPTION, not on a deployed address (founder
+   * 2026-08-05: "even if I unlock 3 domains subscriptions, I can only backup
+   * ollydigital.com"). Paying and then waiting on DNS must never hold a paid feature back.
    */
-  const backupActive = onlineActive || paidDomains.length > 0;
+  const subscribed = onlineActive || paidDomains.length > 0;
   const pollRef = useRef<number | null>(null);
 
   /**
@@ -328,8 +339,11 @@ export function App() {
             {SECTIONS.map((s) => {
               // Paid tabs are locked until Advanced Stats is active — but each tab stays
               // pressable so the lock can EXPLAIN itself (a dead control reads as broken).
+              // Back up and Conversions unlock on the SUBSCRIPTION (a live address counts
+              // too); Team access needs the address itself, since that's what people log in to.
               const locked =
-                s.key in LOCKED_TABS && !(s.key === "backup" ? backupActive : onlineActive);
+                s.key in LOCKED_TABS &&
+                !(s.key === "backup" || s.key === "conversions" ? subscribed : onlineActive);
               return (
                 <button
                   key={s.key}
@@ -405,8 +419,18 @@ export function App() {
             {/* Paid tier (founder decision 2026-08-05) — the tab is locked without an
                 active domain, and the panel double-checks so a stale section state can
                 never render the tools unpaid. */}
-            {backupActive && (
+            {subscribed && (
               <Backup
+                onlineDomains={edgeState.filter((e) => e.phase === "ready" && e.domain).map((e) => e.domain!)}
+                paidDomains={paidDomains}
+              />
+            )}
+          </div>
+          <div hidden={section !== "conversions"}>
+            {/* Paid, per site (§7e) — the panel re-checks so a stale section state can
+                never render the tools unpaid. */}
+            {subscribed && (
+              <Conversions
                 onlineDomains={edgeState.filter((e) => e.phase === "ready" && e.domain).map((e) => e.domain!)}
                 paidDomains={paidDomains}
               />

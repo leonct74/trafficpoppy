@@ -408,6 +408,55 @@ is granted. A paid poppy satisfies it as long as the part touching AWS is readab
 exactly the split above. `DEVELOPER_TERMS.md` already names PolyForm/FSL (restrictive-use
 licences) as acceptable, so the policy contemplates paid + public today.
 
+## 7e. Conversions tracker — counting what you actually wanted (founder ask 2026-08-07)
+
+"How many people pressed the download button? How many reached the thank-you page?" —
+**paid, per site, with its own tab placed after Team access** (founder decision 2026-08-07:
+"it is a paid feature, it is implemented in the desktop app, so this is a 100% legit paid
+feature"). Locked exactly like Team access and Back up, and — like Back up — it unlocks on the
+SUBSCRIPTION, not on a deployed address: paying and then waiting on DNS must never hold a paid
+feature back.
+
+**Two kinds, because owners think in exactly two questions.** The UI never says "event",
+"selector" or "attribute" before the user has answered one plain question — *what do you want
+to count?*
+
+| The question | Kind | How it counts | Retroactive? |
+|---|---|---|---|
+| "Someone reaches a page" | `page` | the collector matches the pageview's path against the registered goal — no extra request | **Yes** — its conversions ARE the `page#<path>` counter, which already existed |
+| "Someone presses a button or link" | `event` | `data-tp-goal="name"` on the element; t.js posts `{s,p,g}` and the collector counts the name | No — from the day it's created |
+
+**Counters (day partition, aggregate-only — the §6 line holds).** `goal#<name>` = conversions;
+`goalu#<name>` = how many DIFFERENT visitors converted, decided by the SAME salted window hash
+the daily-unique check uses, in a TTL'd `site#<id>#uniqg#<day>` partition that dies with the
+salt. A conversion therefore adds no new knowledge about anyone: it is one more counter, and
+"12 presses from 5 people" is the most it can ever say. A page goal reads its conversions from
+the page counter, which is exactly why it works backwards.
+
+**Registered goals only.** The collector is a public endpoint, so anyone can post any name.
+Names exist only where the OWNER wrote them — a `goals` JSON attribute on the site's registry
+row, validated sidecar-side (`[a-z0-9][a-z0-9_-]{0,39}`, ≤20 per site, page goals must name a
+path). The collector reads that row on a 60 s cache (the same read that already fetched
+`saltDays` — one GetItem, not two) and silently ignores anything else. This also makes the paid
+gate structural rather than cosmetic: registration goes through the app, which is gated, so an
+unsubscribed site has no names to count.
+
+**A goal event is never a page view.** It takes its own cheap flood cap (`total#events`), so a
+spammed beacon costs ~1 write and can never inflate traffic; a malformed `g` counts NOTHING
+rather than falling through to a phantom pageview. GPC/DNT still means nothing at all is
+counted.
+
+**t.js grew by one delegated capture-phase click listener** and got *smaller* on the wire: the
+served script now strips its own comment lines (authored readable, served ~1.6 KB).
+
+**The one place this can go wrong is the owner's HTML edit**, so it ships as a prompt: each
+event goal offers "let your AI do it" alongside the copyable attribute, and the goal's card
+turns green — "Working" — on the first press, so nobody has to guess whether their edit landed.
+
+**Where the numbers appear.** The tracker tab is for setup and health; the numbers live where
+numbers live — a Conversions card in the desktop dashboard and on the online statistics page,
+both from the same shared reduction, so the two never drift.
+
 ## 8. Reuse from the existing poppies (do NOT reinvent)
 
 - **Deploy pipeline**: MailPoppy's asset-free CFN pattern — synthesized template + one
@@ -1122,3 +1171,19 @@ materializes.
   subscribed?", so that half arrives from the frontend and is convenience-gating, not
   security — which matches the founder's own framing (the table is the owner's; the tier
   sells convenience). The sidecar still derives deployed edges itself.
+- 2026-08-07 — **Conversions tracker shipped (§7e), paid, its own tab after Team access**
+  (founder: "it is a paid feature… please try to design a UX that it would be easy to
+  understand and setup for the user"). The design rule: the user answers ONE plain question
+  — "someone reaches a page" or "someone presses a button or link" — and everything else
+  follows from it. Page goals are **retroactive by construction** (their conversions ARE the
+  `page#<path>` counter that already existed); button goals need one attribute,
+  `data-tp-goal="name"`, offered with a copy button AND a prompt for whatever AI edits the
+  owner's website — that HTML edit is the only step this feature can fail at, so the goal's
+  card verifies itself and turns green on the first press. Two aggregate counters per goal
+  (`goal#`, `goalu#`); distinct converters reuse the existing salted window hash in a TTL'd
+  partition, so a conversion adds no new knowledge about anyone. **Registered names only**:
+  the public collector counts nothing that isn't on the site row, which makes the paid gate
+  structural (registration goes through the gated app) rather than a client-side boolean. A
+  goal event can never become a page view — its own flood cap, and a malformed name counts
+  nothing. No manifest change and no new AWS permission: it is counters in the table that
+  already exists, so this ships as ONE stack update.

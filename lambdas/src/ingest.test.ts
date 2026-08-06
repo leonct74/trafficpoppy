@@ -16,6 +16,12 @@ function fakeStore(seed?: { salt?: Record<string, string>; uniques?: Set<string>
       if (!salts.has(day)) salts.set(day, salt);
     },
     bumpViews: async () => ++views,
+    bumpCounter: async (pk, sk) => {
+      const key = `${pk}|${sk}`;
+      const next = (counters.get(key) ?? 0) + 1;
+      counters.set(key, next);
+      return next;
+    },
     bumpCounters: async (keys: CounterKey[]) => {
       for (const k of keys) counters.set(`${k.pk}|${k.sk}`, (counters.get(`${k.pk}|${k.sk}`) ?? 0) + 1);
     },
@@ -25,7 +31,7 @@ function fakeStore(seed?: { salt?: Record<string, string>; uniques?: Set<string>
       uniques.add(key);
       return true;
     },
-    getSiteSaltDays: async () => undefined,
+    getSiteConfig: async () => ({}),
   };
   return { store, salts, uniques, counters, viewsNow: () => views };
 }
@@ -38,7 +44,7 @@ function deps(over: Partial<IngestDeps> & { store: Store }): IngestDeps {
     now: at("2026-07-18T09:00:00Z"),
     freshSalt: () => "SALT_A",
     dailyCap: 1000,
-    getSaltDays: async () => 1,
+    getSiteConfig: async () => ({ saltDays: 1 }),
     ...over,
   };
 }
@@ -118,7 +124,7 @@ describe("saltWindow — §6b baseline windows are fixed UTC buckets, 1–7 days
 });
 
 describe("new vs returning (§6b's free by-product) — no extra identity, one more TTL'd row", () => {
-  const week = { getSaltDays: async () => 7 };
+  const week = { getSiteConfig: async () => ({ saltDays: 7 }) };
 
   it("first-ever visit in a window counts as new", async () => {
     const f = fakeStore();
@@ -143,7 +149,7 @@ describe("new vs returning (§6b's free by-product) — no extra identity, one m
 
   it("a 1-day window counts every unique as new — returns are unknowable by construction", async () => {
     const f = fakeStore();
-    await ingest(ev, "9.9.9.9", "UA", deps({ store: f.store, getSaltDays: async () => 1 }));
+    await ingest(ev, "9.9.9.9", "UA", deps({ store: f.store, getSiteConfig: async () => ({ saltDays: 1 }) }));
     expect(f.counters.get("site#s1#day#2026-07-18|total#new")).toBe(1);
     // And no window row beyond the daily one was written.
     for (const u of f.uniques) expect(u).not.toContain("uniq#w#");
@@ -217,5 +223,75 @@ describe("ingest — one pageview", () => {
     await ingest(ev, "203.0.113.7", "UA", deps({ store: f.store }));
     for (const key of f.counters.keys()) expect(key).not.toContain("203.0.113.7");
     for (const u of f.uniques) expect(u).not.toContain("203.0.113.7");
+  });
+});
+
+/**
+ * Conversion goals (§7e). The two properties that matter: an unregistered name writes
+ * NOTHING (the endpoint is public — anyone can post any name), and a goal event is never
+ * a page view, so conversions can't inflate traffic.
+ */
+describe("ingest — conversion goals", () => {
+  const goalEv = normalize({ s: "s1", p: "/x", g: "download" }, { doNotTrack: false })!;
+  const withGoals = (goals: { name: string; kind: "page" | "event"; path?: string }[]) => ({
+    getSiteConfig: async () => ({ saltDays: 1, goals }),
+  });
+
+  it("counts a registered button goal and the visitor behind it — once per window", async () => {
+    const f = fakeStore();
+    const d = deps({ store: f.store, ...withGoals([{ name: "download", kind: "event" }]) });
+    await ingest(goalEv, "9.9.9.9", "UA", d);
+    await ingest(goalEv, "9.9.9.9", "UA", d); // same person presses twice
+    expect(f.counters.get("site#s1#day#2026-07-18|goal#download")).toBe(2);
+    expect(f.counters.get("site#s1#day#2026-07-18|goalu#download")).toBe(1);
+    // …and a different visitor is a second converter.
+    await ingest(goalEv, "8.8.8.8", "UA", d);
+    expect(f.counters.get("site#s1#day#2026-07-18|goalu#download")).toBe(2);
+  });
+
+  it("writes NOTHING for a name the owner never registered", async () => {
+    const f = fakeStore();
+    const r = await ingest(goalEv, "9.9.9.9", "UA", deps({ store: f.store, ...withGoals([]) }));
+    expect(r.counted).toBe(false);
+    expect([...f.counters.keys()].filter((k) => k.includes("goal"))).toEqual([]);
+  });
+
+  it("a goal is never a page view — views, pages and uniques are untouched", async () => {
+    const f = fakeStore();
+    await ingest(goalEv, "9.9.9.9", "UA", deps({ store: f.store, ...withGoals([{ name: "download", kind: "event" }]) }));
+    expect(f.viewsNow()).toBe(0);
+    expect(f.counters.get("site#s1#day#2026-07-18|page#/x")).toBeUndefined();
+    expect(f.counters.get("site#s1#day#2026-07-18|total#uniques")).toBeUndefined();
+  });
+
+  it("a page goal converts on the pageview itself — no second request from the browser", async () => {
+    const f = fakeStore();
+    const d = deps({ store: f.store, ...withGoals([{ name: "thanks", kind: "page", path: "/x" }]) });
+    await ingest(ev, "9.9.9.9", "UA", d);
+    expect(f.counters.get("site#s1#day#2026-07-18|goalu#thanks")).toBe(1);
+    expect(f.counters.get("site#s1#day#2026-07-18|page#/x")).toBe(1); // still a normal view
+  });
+
+  it("a page goal for another path stays at zero", async () => {
+    const f = fakeStore();
+    const d = deps({ store: f.store, ...withGoals([{ name: "thanks", kind: "page", path: "/other" }]) });
+    await ingest(ev, "9.9.9.9", "UA", d);
+    expect(f.counters.get("site#s1#day#2026-07-18|goalu#thanks")).toBeUndefined();
+  });
+
+  it("goal beacons have their own flood cap, so they can never run up the bill", async () => {
+    const f = fakeStore();
+    const d = deps({ store: f.store, dailyCap: 1, ...withGoals([{ name: "download", kind: "event" }]) });
+    await ingest(goalEv, "a", "UA", d);
+    const second = await ingest(goalEv, "b", "UA", d);
+    expect(second).toEqual({ counted: false, capped: true, newVisitor: false });
+    expect(f.counters.get("site#s1#day#2026-07-18|goal#download")).toBe(1);
+  });
+
+  it("the converter row dies with the window's salt — the hash outlives nothing", async () => {
+    const f = fakeStore();
+    await ingest(goalEv, "9.9.9.9", "UA", deps({ store: f.store, ...withGoals([{ name: "download", kind: "event" }]) }));
+    const row = [...f.uniques].find((k) => k.includes("uniqg"));
+    expect(row).toMatch(/^site#s1#uniqg#2026-07-18\|download\|[a-f0-9]{64}$/);
   });
 });

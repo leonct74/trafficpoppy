@@ -193,6 +193,13 @@ const server = createServer(async (req, res) => {
         }
         // §6b baseline: the owner's salt window (1–7 days). Clamped here AND in the
         // collector, so no stored value can ever exceed the consent-free ceiling.
+        // Conversion goals (§7e): the app sends the whole list, we validate and store it.
+        // This is the ONLY way a goal name comes to exist — the public collector counts
+        // nothing it can't find here, so an outsider cannot invent counters in the table.
+        if (method === "PUT" && parts[2] === "goals") {
+          const body = (await readBody(req)) as { goals?: unknown } | undefined;
+          return json(res, 200, { goals: await sites.setGoals(id, body?.goals) });
+        }
         if (method === "PUT" && parts[2] === "settings") {
           const body = (await readBody(req)) as { saltDays?: unknown } | undefined;
           const saltDays = await sites.setSaltDays(id, body?.saltDays);

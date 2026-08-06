@@ -459,6 +459,19 @@ function renderDetail(r,live){
   var flow=flowSvg(r);
   if(flow)html+='<div class="card"><h2>Traffic flow — in, through, and out</h2>'+flow+'<p class="mut" style="margin:8px 0 0"><span style="color:var(--ok)">■</span> traffic coming in · <span style="color:#ff7b72">■</span> traffic going on or leaving. Counts, never individual visitors.</p></div>';
 
+  // Conversion goals (§7e): what the owner actually wants to happen, first among the
+  // breakdowns because it outranks any list of pages. Counts and distinct converters —
+  // never who.
+  var gs=r.goals||[];
+  if(gs.length)html+='<div class="card"><h2>Conversions</h2>'+gs.map(function(g){
+    var rate=r.uniques>0?Math.round((g.converters||g.conversions)/r.uniques*1000)/10:null;
+    return '<div class="brow" style="grid-template-columns:minmax(0,1.4fr) auto auto auto"><span>'
+      +esc(g.name)+' <span class="mut">'+(g.kind==="page"?esc(g.path||""):"button or link")+'</span></span>'
+      +'<span style="font-variant-numeric:tabular-nums">'+nfmt(g.conversions)+' <span class="mut">conversions</span></span>'
+      +'<span class="mut">'+(g.converters?nfmt(g.converters)+" visitors":"")+'</span>'
+      +'<span>'+(rate===null?"":rate+"% ")+delta(g.conversions,g.prevConversions)+"</span></div>";
+  }).join("")+'<p class="mut" style="margin:8px 0 0">Rate compares converting visitors with unique visitors in the same period.</p></div>';
+
   var mv=movers(r.topPages,p.topPages);
   if(mv)html+='<div class="card"><h2>Top movers vs the previous period</h2>'+mv.map(function(m){
     var up=m.d>0;

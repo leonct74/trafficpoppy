@@ -13,6 +13,8 @@
 //   - the raw IP is only an input to the daily hash (computed in the handler) and is
 //     never part of anything returned here.
 
+import { normalizeGoalName } from "../../shared/src/goals";
+
 /** The exactly-three utm keys we keep. Everything else in the query string is dropped. */
 export const UTM_ALLOWLIST = ["utm_source", "utm_medium", "utm_campaign"] as const;
 
@@ -30,6 +32,13 @@ export interface RawEvent {
    * the owner's own site (external referrers stay hostname-only, the §6 invariant).
    */
   v?: unknown;
+  /**
+   * A conversion goal's name (§7e), sent when the visitor presses something carrying
+   * `data-tp-goal`. Its presence makes the whole event a GOAL event: no pageview is
+   * counted, nothing about the page rides along, and the collector refuses any name the
+   * owner hasn't registered on the site.
+   */
+  g?: unknown;
 }
 
 /** Request context the handler pulls from headers (not from the body). */
@@ -58,6 +67,11 @@ export interface NormalizedEvent {
   country?: string;
   /** Previous same-site path (traffic flow). Mutually exclusive with referrerHost. */
   prevPath?: string;
+  /**
+   * Set ⇒ this is a conversion-goal event (§7e), not a pageview: the only thing it can
+   * ever increment is that goal's two counters, and only if the owner registered the name.
+   */
+  goal?: string;
 }
 
 const MAX_SITE_ID = 64;
@@ -165,6 +179,17 @@ export function normalize(raw: RawEvent, ctx: RequestContext, ownHost?: string):
   if (!siteId || !path) return null;
   // Site ids are opaque short tokens we mint; reject anything that isn't [A-Za-z0-9_-].
   if (!/^[A-Za-z0-9_-]+$/.test(siteId)) return null;
+
+  // A goal event (§7e) stops here: the name is all it may carry. Whether that name is
+  // allowed at all is decided in ingest, against the goals the OWNER registered — an
+  // unregistered name writes nothing, so a public endpoint can't be used to invent
+  // counter rows in someone else's table.
+  // Anything carrying `g` is a goal event and can never become a page view — a typo in
+  // someone's data-tp-goal attribute must not silently inflate their traffic.
+  if (clean(raw.g, 64)) {
+    const goal = normalizeGoalName(raw.g);
+    return goal ? { siteId, path, browser: "", os: "", size: "", utm: {}, goal } : null;
+  }
 
   // Strictly a two-letter code (CloudFront sends "ZZ"/unknown junk sometimes; drop it).
   const country =
