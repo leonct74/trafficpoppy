@@ -247,10 +247,14 @@ async function edgeStatusOne(
 
   // A rolled-back stack beside a live certificate is always debris (an earlier failed
   // attempt) — clear it rather than letting it shadow the real phase with a stale error.
+  // But CAPTURE the reason first (live lesson 2026-08-06: a CNAMEAlreadyExists loop spun
+  // create→rollback→delete for a DAY, and this cleanup erased the evidence every cycle,
+  // so the card showed "setting up at the edge" throughout).
   if (stack && stackStatus === "ROLLBACK_COMPLETE") {
+    const failureReason = await firstFailure(ctx.cfn, rec.stackName);
     await ctx.cfn.send(new DeleteStackCommand({ StackName: rec.stackName }));
     const phase = certStatus === "PENDING_VALIDATION" ? "validating" : "deploying";
-    return { phase, stackStatus: "DELETE_IN_PROGRESS", domain, records, inProgress: true };
+    return { phase, stackStatus: "DELETE_IN_PROGRESS", domain, records, inProgress: true, failureReason };
   }
 
   // ADVANCE: cert issued, no stack yet → deploy the distribution.
@@ -285,7 +289,12 @@ async function edgeStatusOne(
     records,
     distributionDomain,
     inProgress: inProgress || phase === "validating",
-    failureReason: phase === "failed" ? await firstFailure(ctx.cfn, rec.stackName) : undefined,
+    // A rollback mid-flight is a FAILURE being cleaned up, not progress — surface the
+    // reason so "setting up at the edge" can never mask a create→rollback loop again.
+    failureReason:
+      phase === "failed" || stackStatus.includes("ROLLBACK")
+        ? await firstFailure(ctx.cfn, rec.stackName)
+        : undefined,
     updateAvailable: updateAvailable || undefined,
     viewerAtEdge: (phase === "ready" && !!deployedViewerHost) || undefined,
   };

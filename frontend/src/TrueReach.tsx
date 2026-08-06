@@ -224,6 +224,14 @@ function SiteRow(props: {
             Choose the address for its statistics page — any name in front of your domain works
             (most people keep <span className="mono">stats</span>).
           </p>
+          {/* Founder 2026-08-06: an address already serving something else makes the
+              deployment fail-and-retry invisibly (CloudFront refuses a taken alias).
+              Warn where the name is picked, not after. */}
+          <p className="muted" style={{ margin: 0, fontSize: 12 }}>
+            <strong>Pick a name that isn't already in use.</strong> If this address already points
+            somewhere — an old setup, another service — AWS can't take it and the setup will keep
+            failing until that other use is removed. Freshly unused names just work.
+          </p>
           <div className="row" style={{ flexWrap: "wrap" }}>
             <span className="row" style={{ gap: 0 }}>
               <input
@@ -334,6 +342,14 @@ function EdgeCard(props: {
             record (e.g. an orange cloud), turn it OFF: the check needs the plain record.
           </p>
         </>
+      )}
+      {edge.phase === "deploying" && edge.failureReason && (
+        <div className="banner err">
+          <strong>The last attempt didn't go through — AWS said:</strong>{" "}
+          <span className="mono" style={{ fontSize: 12 }}>{edge.failureReason}</span>{" "}
+          It is being retried automatically; if the same message keeps coming back, the cause needs
+          fixing first (a domain already attached to another distribution is the classic one).
+        </div>
       )}
       {edge.phase === "deploying" && (
         <>
