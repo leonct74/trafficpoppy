@@ -43,9 +43,15 @@ describe("password rules on the login page", () => {
 describe("dashboard v2 — professional and fully self-contained", () => {
   const page = dashboardHtml({ region: "eu-west-1", userPoolClientId: "client123" });
 
-  it("carries its own favicon inline — no /favicon.ico round trip, no external fetch", () => {
+  it("carries TrafficPoppy's OWN icon inline — no /favicon.ico round trip, no external fetch", () => {
+    // Founder 2026-08-06: it must be the product's logo, not an invented mark. Inline as a
+    // data URI so the page stays self-contained and the edge never serves a 404 favicon.
     expect(page).toContain('rel="icon"');
-    expect(page).toContain("data:image/svg+xml");
+    expect(page).toContain("data:image/png;base64,");
+    // Small enough to be free: the icon is downscaled, not the full 512px original.
+    const uri = /href="(data:image\/png;base64,[^"]+)"/.exec(page)?.[1] ?? "";
+    expect(uri.length).toBeGreaterThan(200);
+    expect(uri.length).toBeLessThan(8000);
   });
 
   it("loads NOTHING from outside its own origin except Cognito's login endpoint", () => {
