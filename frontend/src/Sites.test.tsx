@@ -141,3 +141,24 @@ describe("restore → sites reload (tabs stay mounted)", () => {
     await waitFor(() => expect(mocked.listSites).toHaveBeenCalledTimes(2));
   });
 });
+
+describe("adding a site tells the other (mounted) tabs", () => {
+  it("emits tp:sites-changed, so Advanced stats can offer the new site immediately", async () => {
+    mocked.listSites.mockResolvedValue({ sites: [] });
+    const mockedApi = api as unknown as { addSite: ReturnType<typeof vi.fn> };
+    mockedApi.addSite.mockResolvedValue({ site: { id: "n1", name: "New", domain: "new.example", createdAt: "2026-08-06" } });
+    const seen: string[] = [];
+    const onChanged = () => seen.push("changed");
+    document.addEventListener("tp:sites-changed", onChanged);
+
+    render(<Sites collectorUrl={URL} />);
+    await screen.findByText(/paste into its pages/i);
+    const inputs = screen.getAllByRole("textbox");
+    await userEvent.type(inputs[0]!, "New");
+    await userEvent.type(inputs[1]!, "new.example");
+    await userEvent.click(screen.getByRole("button", { name: /add site/i }));
+
+    await waitFor(() => expect(seen).toHaveLength(1));
+    document.removeEventListener("tp:sites-changed", onChanged);
+  });
+});

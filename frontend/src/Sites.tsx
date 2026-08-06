@@ -125,6 +125,11 @@ export function Sites(props: { collectorUrl: string; trueReachDomains?: string[]
       setName("");
       setDomain("");
       await load();
+      // Tabs stay mounted, so Advanced stats / Back up hold their own copy of the site
+      // list. Without this, a site added now is invisible there until the app restarts
+      // (founder 2026-08-06: "why don't I see trafficpoppy.agentspoppy.com in the list
+      // to activate advanced stats?").
+      document.dispatchEvent(new CustomEvent("tp:sites-changed"));
     } catch (e) {
       setErr((e as Error).message);
     }
@@ -345,6 +350,7 @@ function SiteRow(props: {
               onClick={async () => {
                 await api.removeSite(site.id);
                 props.onRemoved();
+                document.dispatchEvent(new CustomEvent("tp:sites-changed"));
               }}
             >
               Remove

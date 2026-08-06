@@ -150,7 +150,15 @@ export function App() {
   // the stack is up — before that there is no table to ask.
   useEffect(() => {
     if (phase !== "ready") return;
-    api.listSites().then(({ sites }) => setAllSites(sites)).catch(() => setAllSites([]));
+    const load = () => api.listSites().then(({ sites }) => setAllSites(sites)).catch(() => setAllSites([]));
+    void load();
+    const onChanged = () => void load();
+    document.addEventListener("tp:sites-changed", onChanged);
+    document.addEventListener("tp:data-restored", onChanged);
+    return () => {
+      document.removeEventListener("tp:sites-changed", onChanged);
+      document.removeEventListener("tp:data-restored", onChanged);
+    };
   }, [phase]);
 
   // Poll only while AWS is actually mid-operation, and re-attach automatically on mount

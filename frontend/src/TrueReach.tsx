@@ -45,7 +45,18 @@ export function TrueReach(props: { onStatus?: (edges: EdgeStatus[]) => void }) {
   const { onStatus } = props;
 
   useEffect(() => {
-    api.listSites().then(({ sites: s }) => setSites(s)).catch(() => setSites([]));
+    const load = () => api.listSites().then(({ sites: s }) => setSites(s)).catch(() => setSites([]));
+    void load();
+    // This panel stays mounted while the owner works in other tabs, so it must be told
+    // when the site list changes — otherwise a newly added site can't be unlocked here
+    // until the app restarts.
+    const onChanged = () => void load();
+    document.addEventListener("tp:sites-changed", onChanged);
+    document.addEventListener("tp:data-restored", onChanged);
+    return () => {
+      document.removeEventListener("tp:sites-changed", onChanged);
+      document.removeEventListener("tp:data-restored", onChanged);
+    };
   }, []);
 
   const refresh = async () => {
