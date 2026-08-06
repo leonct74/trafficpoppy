@@ -43,6 +43,11 @@ describe("password rules on the login page", () => {
 describe("dashboard v2 — professional and fully self-contained", () => {
   const page = dashboardHtml({ region: "eu-west-1", userPoolClientId: "client123" });
 
+  it("carries its own favicon inline — no /favicon.ico round trip, no external fetch", () => {
+    expect(page).toContain('rel="icon"');
+    expect(page).toContain("data:image/svg+xml");
+  });
+
   it("loads NOTHING from outside its own origin except Cognito's login endpoint", () => {
     const externals = page.match(/https:\/\/[a-z0-9.-]+/gi) ?? [];
     for (const url of externals) expect(url).toContain("cognito-idp.");

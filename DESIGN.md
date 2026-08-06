@@ -621,6 +621,25 @@ S3 rollups + Athena guide · weekly SES email report · §10.6 cohort marker opt
 §10.7 geo policy engine · Linux poppy packages if the container's Linux user base
 materializes.
 
+## 13b. Planned, not built (founder-parked)
+
+- **Tighten the online-dashboard gate (found 2026-08-06, deferred by the founder).** The
+  viewer treats "a cert row exists" as "this domain is unlocked" ([viewer.ts] `edgeDomains`),
+  and that row is written the moment the certificate is REQUESTED ([edge.ts] `deployEdge`) —
+  so a setup that is merely *started*, never finished and never paid for, already unlocks
+  browser access for that domain. The sidecar's deploy route verifies no entitlement either;
+  the only barrier is the disabled button in the desktop UI, and the sidecar is reachable on
+  loopback by the machine's owner. Consequence: pay for one domain, start (and abandon)
+  setups for ninety-nine more, and all hundred appear in the browser dashboard — precisely
+  what per-site pricing exists to prevent. Two fixes, in order:
+  1. **Gate on a READY edge.** Stamp the cert row when the stack reaches CREATE_COMPLETE
+     (`domain|arn|stack|ready`) and have the viewer require the stamp. Small, stays
+     server-side, kills the abandoned-setup hole.
+  2. **Make entitlement itself server-side.** Point the platform's purchase-notification
+     URL (§12) at the *collector Lambda* — the one public endpoint a desktop poppy has —
+     have it write an entitlement row per domain, and gate the viewer on that. Then a
+     lapsed or absent subscription removes browser access with no UI in the loop.
+
 ## 14. Status
 
 - 2026-07-17 — **Planning COMPLETE.** DESIGN.md drafted; §10 open questions answered by the
@@ -1041,6 +1060,18 @@ materializes.
   widen it. Removal moved into a 5th tab, **deliberately unlocked** — "you can always
   remove everything" is a platform promise that outranks the paywall, and burying it
   inside a paid tab would have broken it for free-tier users.
+- 2026-08-06 — **Restore can no longer leave a website listed twice** (founder: "confirm
+  restore doesn't create duplicates any more, otherwise we need to remove it"). The
+  earlier fix only absorbed an EMPTY twin and reported a data-holding one as a conflict —
+  which is still a duplicate, just a documented one. Now the twin is always absorbed: no
+  counters ⇒ delete the placeholder row and keep the restored id; counters ⇒ merge the
+  restored history ONTO the twin (it is the record the live snippet feeds) and drop the
+  restored row. Exactly one record per domain survives either way, and it is always the
+  one already receiving traffic, so no website ever needs its tag edited. `conflicts` is
+  now always empty and kept only for API compatibility.
+- 2026-08-06 — **The statistics page carries its own favicon**, inline as an SVG data URI:
+  the page stays entirely self-contained (nothing ever leaves for a third party) and a
+  missing `/favicon.ico` no longer 404s through the edge on every visit.
 - 2026-08-06 — **Whitespace can never survive a copy from the UI (the `\040` lesson).**
   A validation CNAME pasted into Route 53 with ONE leading space is stored as a
   different name (`\040_3d47…`), served as authoritative NXDOMAIN, and looks perfectly

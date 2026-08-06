@@ -173,22 +173,50 @@ describe("restoreBackup", () => {
       expect((del as { input: { Key: { sk: { S: string } } } }).input.Key.sk.S).toBe("site#new"); // the EMPTY one
     });
 
-    it("never deletes a twin that holds data — it reports the clash instead", async () => {
+    /**
+     * Founder rule 2026-08-06: "confirm restore doesn't create duplicates any more,
+     * otherwise we need to remove it." When BOTH copies hold data, the restored history
+     * moves onto the record the live snippet reports into — never left as a clash for
+     * the owner to sort out by hand.
+     */
+    it("when the twin holds data, the restored history is merged INTO it — no leftovers", async () => {
       const path = fileWith(dirOf());
+      const seen: { name: string; input: any }[] = [];
+      let sourceDrained = false;
       const db = {
-        send: vi.fn().mockImplementation((cmd: { constructor: { name: string }; input: Record<string, unknown> }) => {
+        send: vi.fn().mockImplementation((cmd: any) => {
           const name = cmd.constructor.name;
-          if (name === "ScanCommand" && !cmd.input.FilterExpression) {
+          seen.push({ name, input: cmd.input });
+          if (name === "ScanCommand") {
+            const filter = cmd.input.FilterExpression as string | undefined;
+            // The merge's own drain scan (source counters), emptied after one pass.
+            if (filter?.includes("begins_with(pk")) {
+              const p = cmd.input.ExpressionAttributeValues[":p"].S as string;
+              if (p.startsWith("site#new#day#")) return Promise.resolve({ Items: [row("x", "y")] }); // twin HAS data
+              if (sourceDrained) return Promise.resolve({ Items: [] });
+              sourceDrained = true;
+              return Promise.resolve({ Items: [row("site#old#day#2026-08-04", "total#views", { count: { N: "12" } })] });
+            }
+            // The opening scan: a re-created ollydigital.com already exists.
             return Promise.resolve({ Items: [row("sites", "site#new", { domain: { S: "ollydigital.com" } })] });
           }
-          if (name === "DeleteItemCommand") throw new Error("must not delete a site holding data");
-          return Promise.resolve({ Items: [row("site#new#day#2026-08-05", "total#views")] }); // twin HAS data
+          return Promise.resolve({ Items: [] });
         }),
       } as unknown as DynamoDBClient;
 
       const r = await restoreBackup(db, "T", path);
-      expect(r.conflicts).toEqual(["ollydigital.com"]);
-      expect(r.mergedSites).toEqual([]);
+      expect(r.mergedSites).toEqual(["ollydigital.com"]);
+      expect(r.conflicts).toEqual([]); // nothing is ever left for the owner to reconcile
+
+      // The history landed on the LIVE record, added not overwritten…
+      const add = seen.find((c) => c.name === "UpdateItemCommand")!;
+      expect(add.input.Key.pk.S).toBe("site#new#day#2026-08-04");
+      expect(add.input.UpdateExpression).toBe("ADD #c :n");
+      // …and the restored duplicate row is gone, so exactly one record per domain remains.
+      const deletedSites = seen
+        .filter((c) => c.name === "DeleteItemCommand" && c.input.Key.pk.S === "sites")
+        .map((c) => c.input.Key.sk.S);
+      expect(deletedSites).toEqual(["site#old"]);
     });
   });
 

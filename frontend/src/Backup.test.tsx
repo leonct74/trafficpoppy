@@ -161,7 +161,12 @@ describe("Back up & restore", () => {
     expect(await screen.findByText(/have their history back/i)).toBeInTheDocument();
   });
 
-  it("says when a restore merged into a site the owner had re-created", async () => {
+  /**
+   * Founder rule 2026-08-06: a restore must never leave a website listed twice —
+   * "otherwise we need to remove it". The sidecar always absorbs the twin, so the card
+   * only ever reports a merge, never a clash to sort out by hand.
+   */
+  it("says a restore merged with what was already there — one record per website", async () => {
     mocked.listBackups.mockResolvedValue({
       backups: [{ path: "/x/TrafficPoppy-backup-2026-08-05.json", date: "2026-08-05", bytes: 2048 }],
     });
@@ -169,19 +174,8 @@ describe("Back up & restore", () => {
     render(<Backup onlineDomains={ONLINE} paidDomains={[]} />);
     await userEvent.click(await screen.findByRole("button", { name: /^restore$/i }));
     await userEvent.click(screen.getByRole("button", { name: /really restore/i }));
-    expect(await screen.findByText(/Merged into your existing ollydigital\.com/i)).toBeInTheDocument();
-    expect(screen.getByText(/each site appears once/i)).toBeInTheDocument();
-  });
-
-  it("reports a clash instead of deleting, when both copies hold data", async () => {
-    mocked.listBackups.mockResolvedValue({
-      backups: [{ path: "/x/TrafficPoppy-backup-2026-08-05.json", date: "2026-08-05", bytes: 2048 }],
-    });
-    mocked.restore.mockResolvedValue({ restored: 43, mergedSites: [], conflicts: ["ollydigital.com"] });
-    render(<Backup onlineDomains={ONLINE} paidDomains={[]} />);
-    await userEvent.click(await screen.findByRole("button", { name: /^restore$/i }));
-    await userEvent.click(screen.getByRole("button", { name: /really restore/i }));
-    expect(await screen.findByText(/now appears twice/i)).toBeInTheDocument();
-    expect(screen.getByText(/nothing was deleted/i)).toBeInTheDocument();
+    expect(await screen.findByText(/Merged with what you already had for ollydigital\.com/i)).toBeInTheDocument();
+    expect(screen.getByText(/one record per website/i)).toBeInTheDocument();
+    expect(screen.getByText(/snippets are\s+unchanged/i)).toBeInTheDocument();
   });
 });

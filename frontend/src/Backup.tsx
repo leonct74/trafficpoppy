@@ -183,15 +183,9 @@ export function Backup(props: {
               Merging the empty twins is the behaviour they expect; say it happened. */}
           {restored.mergedSites.length > 0 && (
             <div>
-              Merged into your existing {restored.mergedSites.join(", ")} — the empty copy was removed, so each
-              site appears once. Your tracking snippet is unchanged.
-            </div>
-          )}
-          {restored.conflicts.length > 0 && (
-            <div>
-              <strong>{restored.conflicts.join(", ")} now appears twice.</strong> Both copies hold data, so
-              nothing was deleted — open Your sites and remove whichever you don't want. The restored one
-              carries the older history.
+              Merged with what you already had for {restored.mergedSites.join(", ")} — one record per website,
+              holding both the restored history and everything collected since. Your tracking snippets are
+              unchanged.
             </div>
           )}
         </div>

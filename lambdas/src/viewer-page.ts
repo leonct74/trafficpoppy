@@ -31,6 +31,10 @@ export function dashboardHtml(cfg: PageConfig): string {
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex, nofollow">
 <title>Analytics</title>
+<!-- Favicon inline as a data URI: the page must stay entirely self-contained (no request
+     ever leaves for a third party), and a missing /favicon.ico would 404 through the edge
+     on every visit. A poppy on the accent colour, drawn as a wordless mark. -->
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230d1117'/%3E%3Ccircle cx='16' cy='13' r='6.5' fill='%23e0645a'/%3E%3Ccircle cx='16' cy='13' r='2.2' fill='%230d1117'/%3E%3Cpath d='M16 19.5v7' stroke='%233fb950' stroke-width='2.4' stroke-linecap='round'/%3E%3C/svg%3E">
 <style>
 :root{--bg:#0d1117;--card:#161b22;--line:#272e38;--fg:#e6edf3;--mut:#8b949e;--acc:#e0645a;--acc2:#58a6ff;--ok:#3fb950}
 *{box-sizing:border-box}

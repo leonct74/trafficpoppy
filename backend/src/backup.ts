@@ -204,31 +204,35 @@ export async function restoreBackup(
     restored += 1;
   }
 
-  // MERGE, don't duplicate: for every domain the restore brought back, drop the OTHER
-  // site rows for that same domain — but only the ones holding no counters. An empty
-  // twin is a placeholder the owner re-created while the real history was in the file;
-  // deleting it is the merge they expected. A twin that HAS collected data is never
-  // touched silently — it is reported so the owner decides.
+  // MERGE, NEVER DUPLICATE (founder rule 2026-08-06: "confirm restore doesn't create
+  // duplicates any more, otherwise we need to remove it"). For every domain the restore
+  // brought back, the other site record for that same domain is absorbed — always, with
+  // no leftover for the owner to reconcile:
+  //   · twin holds no counters → it was a placeholder re-created while the history sat in
+  //     the file; delete the row and keep the restored id.
+  //   · twin holds data → it is the record the live snippet reports into, so the RESTORED
+  //     history moves onto it (arithmetic, nothing overwritten) and the restored row goes.
+  // Either way exactly one record per domain survives, and it's the one already receiving
+  // traffic — so no website ever needs its tag edited.
   const mergedSites: string[] = [];
-  const conflicts: string[] = [];
   for (const [domain, restoredId] of restoredSiteIds) {
     for (const twin of existing.get(domain) ?? []) {
       if (twin.id === restoredId) continue;
       if (await siteHasCounters(db, tableName, twin.id)) {
-        conflicts.push(domain);
-        continue;
+        await mergeSites(db, tableName, restoredId, twin.id);
+      } else {
+        await db.send(
+          new DeleteItemCommand({
+            TableName: tableName,
+            Key: { pk: { S: "sites" }, sk: { S: `site#${twin.id}` } },
+          }),
+        );
       }
-      await db.send(
-        new DeleteItemCommand({
-          TableName: tableName,
-          Key: { pk: { S: "sites" }, sk: { S: `site#${twin.id}` } },
-        }),
-      );
       mergedSites.push(domain);
     }
   }
 
-  return { restored, mergedSites, conflicts };
+  return { restored, mergedSites, conflicts: [] as string[] };
 }
 
 /**
