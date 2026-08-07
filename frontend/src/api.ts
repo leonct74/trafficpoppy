@@ -66,12 +66,14 @@ export const api = {
     rows: number;
     sites: number;
     counters: number;
+    /** Conversion goals carried along with the sites (§7e). */
+    goals: number;
     skippedSites: string[];
   }> =>
     host.invokeBackend({ method: "POST", path: "/backup", body: { siteIds, entitledDomains } }, 5 * 60_000),
   listBackups: (): Promise<{ backups: { path: string; date: string; bytes: number }[] }> =>
     host.invokeBackend({ method: "GET", path: "/backups" }),
-  restore: (path: string): Promise<{ restored: number; mergedSites: string[]; conflicts: string[] }> =>
+  restore: (path: string): Promise<{ restored: number; goals: number; mergedSites: string[]; conflicts: string[] }> =>
     host.invokeBackend({ method: "POST", path: "/restore", body: { path } }, 15 * 60_000),
 
   /** Merge one site's history into another (two records for the same website). */

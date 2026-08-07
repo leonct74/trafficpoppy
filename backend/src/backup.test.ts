@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import { createBackup, keepRow, listBackups, mergeSites, restoreBackup } from "./backup";
+import { createBackup, keepRow, listBackups, mergeGoals, mergeSites, restoreBackup } from "./backup";
 import type { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 
 const row = (pk: string, sk: string, extra: Record<string, unknown> = {}) =>
@@ -293,5 +293,98 @@ describe("listBackups", () => {
     const found = await listBackups(dir);
     expect(found.map((b) => b.date)).toEqual(["2026-08-05", "2026-08-01"]);
     expect(await listBackups(join(dir, "nope"))).toEqual([]);
+  });
+});
+
+/**
+ * Conversions in a backup (§7e). Two halves that behave very differently: the COUNTERS
+ * ride along as ordinary day rows (nothing to do), while the goal DEFINITIONS live on the
+ * site row — so whichever site record loses a merge would take its conversions with it.
+ * That is the ordinary case, not an exotic one: rebuild, re-create the site, set up
+ * conversions, then restore last month's history.
+ */
+describe("conversion goals survive backup, restore and merge", () => {
+  const goalsAttr = (...names: string[]) => ({
+    goals: { S: JSON.stringify(names.map((n) => ({ name: n, kind: "event" }))) },
+  });
+
+  it("a backup carries the goal definitions and their counters, and says how many", async () => {
+    const db = {
+      send: vi.fn().mockResolvedValue({
+        Items: [
+          row("sites", "site#a", { domain: { S: "ollydigital.com" }, ...goalsAttr("download", "signup") }),
+          row("site#a#day#2026-08-06", "goal#download", { count: { N: "9" } }),
+          row("site#a#day#2026-08-06", "goalu#download", { count: { N: "6" } }),
+          // The per-visitor rows behind "different visitors" are NOT in a backup — they
+          // die with the salt by design, exactly like the daily-unique hashes.
+          row("site#a#uniqg#2026-08-06", "download|deadbeef"),
+        ],
+      }),
+    } as unknown as DynamoDBClient;
+
+    const dir = mkdtempSync(join(tmpdir(), "tp-backup-"));
+    const s = await createBackup(db, "T", ["stats.ollydigital.com"], { dir, now: new Date("2026-08-07T10:00:00Z") });
+    expect(s).toMatchObject({ sites: 1, counters: 2, goals: 2 });
+    const body = await readFile(s.path, "utf8");
+    expect(body).toContain("goal#download");
+    expect(body).toContain("goalu#download");
+    expect(body).toContain('\\"name\\":\\"download\\"');
+    expect(body).not.toContain("uniqg");
+  });
+
+  it("merging two records for one site keeps BOTH sides' conversions", async () => {
+    const seen: { name: string; input: any }[] = [];
+    const db = {
+      send: vi.fn().mockImplementation((cmd: any) => {
+        const name = cmd.constructor.name;
+        seen.push({ name, input: cmd.input });
+        if (name === "ScanCommand") return Promise.resolve({ Items: [] }); // no counters to move
+        if (name === "QueryCommand") {
+          const sk = cmd.input.ExpressionAttributeValues[":s"].S as string;
+          // The old record carried "download"; the live one the owner re-created has "signup".
+          return Promise.resolve({
+            Items: [sk === "site#old" ? row("sites", sk, goalsAttr("download")) : row("sites", sk, goalsAttr("signup"))],
+          });
+        }
+        return Promise.resolve({});
+      }),
+    } as unknown as DynamoDBClient;
+
+    await mergeSites(db, "T", "old", "new");
+
+    const write = seen.find((c) => c.name === "UpdateItemCommand" && c.input.UpdateExpression === "SET goals = :g")!;
+    expect(write.input.Key.sk.S).toBe("site#new"); // onto the record the live tag reports into
+    const merged = JSON.parse(write.input.ExpressionAttributeValues[":g"].S).map((g: { name: string }) => g.name);
+    expect(merged).toEqual(["signup", "download"]); // survivor's own first, nothing dropped
+  });
+
+  it("mergeGoals leaves the row alone when there is nothing to carry", async () => {
+    const seen: string[] = [];
+    const db = {
+      send: vi.fn().mockImplementation((cmd: any) => {
+        seen.push(cmd.constructor.name);
+        return Promise.resolve({ Items: [row("sites", "site#x")] }); // neither side has goals
+      }),
+    } as unknown as DynamoDBClient;
+    expect(await mergeGoals(db, "T", "old", "new")).toEqual([]);
+    expect(seen).not.toContain("UpdateItemCommand");
+  });
+
+  it("a restore reports the conversions it brought back", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "tp-restore-"));
+    const path = join(dir, "TrafficPoppy-backup-2026-08-06.json");
+    writeFileSync(
+      path,
+      JSON.stringify({
+        version: 1,
+        rows: [
+          row("sites", "site#old", { domain: { S: "ollydigital.com" }, ...goalsAttr("download", "signup") }),
+          row("site#old#day#2026-08-05", "goal#download", { count: { N: "4" } }),
+        ],
+      }),
+    );
+    const db = { send: vi.fn().mockResolvedValue({ Items: [] }) } as unknown as DynamoDBClient;
+    const r = await restoreBackup(db, "T", path);
+    expect(r).toMatchObject({ restored: 2, goals: 2, mergedSites: [], conflicts: [] });
   });
 });

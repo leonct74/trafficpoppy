@@ -1209,3 +1209,18 @@ materializes.
   to dump you back on the list, and this page is about to grow more views. Its router is
   tested for real, in jsdom, by driving the actual served script: deep link, refresh,
   click-through, Back.
+- 2026-08-07 — **Conversions in backups: free by construction, except the one part that
+  wasn't** (founder question: "did you update the backup to export the new Conversion
+  dataset? did you update Restore to also merge it?"). The counters needed nothing — a
+  goal writes ordinary `goal#`/`goalu#` rows in the day partition, which the whitelist
+  already carries, and restore/merge are arithmetic over exactly those rows. The goal
+  DEFINITIONS were the gap: they live as an attribute of the site row, so whichever record
+  loses a merge took its conversions with it — and that is the ordinary case, not an exotic
+  one (rebuild → re-create the site → set up conversions → restore last month's history
+  would have silently dropped the goals just configured). `mergeGoals` now unions both
+  sides onto the surviving record before the other row is deleted, in BOTH merge paths
+  (the data-holding twin and the empty placeholder), survivor's definition winning a name
+  clash and the union capped at MAX_GOALS. Backup and restore now also report how many
+  conversions travelled, because a number that moves silently is a number nobody trusts.
+  The per-visitor `uniqg#` rows stay out of backups, exactly like the daily-unique hashes:
+  they die with the salt, by design.

@@ -24,11 +24,15 @@ export function Backup(props: {
     rows: number;
     sites: number;
     counters: number;
+    goals: number;
     skippedSites: string[];
   } | null>(null);
-  const [restored, setRestored] = useState<{ restored: number; mergedSites: string[]; conflicts: string[] } | null>(
-    null,
-  );
+  const [restored, setRestored] = useState<{
+    restored: number;
+    goals: number;
+    mergedSites: string[];
+    conflicts: string[];
+  } | null>(null);
   const [confirming, setConfirming] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
@@ -67,10 +71,11 @@ export function Backup(props: {
         Back up &amp; restore
       </h2>
       <p className="muted" style={{ margin: 0, fontSize: 12 }}>
-        A backup file keeps your numbers, so statistics survive a full removal and return after a
-        fresh setup. Like the online dashboard, it covers the sites you've unlocked with Advanced
-        Stats — one per site. It never contains anything about individual visitors: there is
-        nothing of that kind to back up.
+        A backup file keeps your numbers — visits, pages, referrers and your conversions, both the
+        goals themselves and everything they've counted — so statistics survive a full removal and
+        return after a fresh setup. Like the online dashboard, it covers the sites you've unlocked
+        with Advanced Stats — one per site. It never contains anything about individual visitors:
+        there is nothing of that kind to back up.
       </p>
 
       {err && <div className="banner err">{err}</div>}
@@ -153,7 +158,14 @@ export function Backup(props: {
         <div className="banner info stack" style={{ gap: 6 }}>
           <div>
             Saved <strong>{saved.sites}</strong> site{saved.sites === 1 ? "" : "s"} and{" "}
-            <strong>{saved.counters}</strong> daily records.
+            <strong>{saved.counters}</strong> daily records
+            {saved.goals > 0 && (
+              <>
+                , including <strong>{saved.goals}</strong> conversion{saved.goals === 1 ? "" : "s"} with
+                everything they've counted
+              </>
+            )}
+            .
           </div>
           <div className="row" style={{ gap: 8 }}>
             <code className="chip" style={{ flex: 1, overflowX: "auto", whiteSpace: "nowrap" }}>{saved.path}</code>
@@ -178,6 +190,13 @@ export function Backup(props: {
         <div className="banner info stack" style={{ gap: 6 }}>
           <div>
             Restored <strong>{restored.restored}</strong> records — your dashboards have their history back.
+            {restored.goals > 0 && (
+              <>
+                {" "}
+                Your <strong>{restored.goals}</strong> conversion{restored.goals === 1 ? "" : "s"} came back
+                too, counting again without any change to your website.
+              </>
+            )}
           </div>
           {/* A restore after a rebuild lands beside sites the owner re-created meanwhile.
               Merging the empty twins is the behaviour they expect; say it happened. */}

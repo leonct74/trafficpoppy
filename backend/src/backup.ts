@@ -11,7 +11,9 @@
 //
 // WHAT A BACKUP KEEPS, AND WHAT IT NEVER CONTAINS (privacy invariants, DESIGN.md §2):
 //   kept    — the unlocked sites' registry rows (ids intact, so existing snippets keep
-//             working after a restore) and their aggregate day counters.
+//             working after a restore; their conversion-goal definitions ride along as an
+//             attribute of that row) and their aggregate day counters, conversions
+//             included — `goal#`/`goalu#` are ordinary counters in the day partition.
 //   skipped — the salt (regenerated fresh), the salted visitor-hash rows (they die with
 //             the table BY DESIGN; after a restore, returning visitors count as new once
 //             per window — the honest price), the 30-minute live ticker, and the True
@@ -33,6 +35,7 @@ import {
   type AttributeValue,
 } from "@aws-sdk/client-dynamodb";
 import { isFirstPartyFor } from "../../shared/src/first-party";
+import { MAX_GOALS, readGoals, type Goal } from "../../shared/src/goals";
 
 export interface BackupSummary {
   path: string;
@@ -40,6 +43,8 @@ export interface BackupSummary {
   /** Row count per family, so the UI can say what was kept in plain words. */
   sites: number;
   counters: number;
+  /** Conversion goals carried along with the sites (§7e) — named in the UI. */
+  goals: number;
   /** Sites left out because their domain has no Advanced Stats — named in the UI. */
   skippedSites: string[];
 }
@@ -124,13 +129,16 @@ export async function createBackup(
   const includedIds = new Set(included.map((s) => s.id));
   const counters = counterRows.filter((c) => includedIds.has(c.siteId));
   const rows: Row[] = [...included.map((s) => s.row), ...counters.map((c) => c.row)];
+  // Conversions need no special handling — a goal is its site row's attribute plus ordinary
+  // day counters, so the whitelist above already carries both. Counted only to say so.
+  const goals = included.reduce((n, s) => n + readGoals(s.row.goals?.S).length, 0);
 
   const now = opts?.now ?? new Date();
   const today = now.toISOString().slice(0, 10);
   const path = backupPath(opts?.dir ?? defaultBackupDir(), today);
   const body = { version: 1, exportedAt: now.toISOString(), table: tableName, rows };
   await writeFile(path, JSON.stringify(body), "utf8");
-  return { path, rows: rows.length, sites: included.length, counters: counters.length, skippedSites };
+  return { path, rows: rows.length, sites: included.length, counters: counters.length, goals, skippedSites };
 }
 
 export async function listBackups(dir = defaultBackupDir()): Promise<BackupFileInfo[]> {
@@ -163,7 +171,7 @@ export async function restoreBackup(
   db: DynamoDBClient,
   tableName: string,
   path: string,
-): Promise<{ restored: number; mergedSites: string[]; conflicts: string[] }> {
+): Promise<{ restored: number; goals: number; mergedSites: string[]; conflicts: string[] }> {
   // Only files that look like ours — this endpoint must never become a generic file reader.
   if (!FILE_RE.test(basename(path))) throw new Error("Not a TrafficPoppy backup file.");
   const parsed = JSON.parse(await readFile(path, "utf8")) as { version?: number; rows?: Row[] };
@@ -190,6 +198,7 @@ export async function restoreBackup(
   } while (startKey);
 
   let restored = 0;
+  let goals = 0;
   const restoredSiteIds = new Map<string, string>(); // domain → restored id
   for (const row of parsed.rows) {
     // Re-apply the whitelist on the way IN too: an edited file cannot smuggle salt or
@@ -199,6 +208,7 @@ export async function restoreBackup(
     if (kind === "site") {
       const domain = normalizeDomain(row.domain?.S ?? "");
       if (domain) restoredSiteIds.set(domain, (row.sk?.S ?? "").slice("site#".length));
+      goals += readGoals(row.goals?.S).length; // the site's conversions come back with it
     }
     await db.send(new PutItemCommand({ TableName: tableName, Item: row }));
     restored += 1;
@@ -221,6 +231,10 @@ export async function restoreBackup(
       if (await siteHasCounters(db, tableName, twin.id)) {
         await mergeSites(db, tableName, restoredId, twin.id);
       } else {
+        // The placeholder holds no numbers, but it may hold the conversions the owner set
+        // up while their history sat in the file — those move onto the restored record
+        // before the placeholder goes (§7e).
+        await mergeGoals(db, tableName, twin.id, restoredId);
         await db.send(
           new DeleteItemCommand({
             TableName: tableName,
@@ -232,7 +246,7 @@ export async function restoreBackup(
     }
   }
 
-  return { restored, mergedSites, conflicts: [] as string[] };
+  return { restored, goals, mergedSites, conflicts: [] as string[] };
 }
 
 /**
@@ -291,12 +305,65 @@ export async function mergeSites(
     }
   }
 
+  // The goal DEFINITIONS ride across before the source row disappears (§7e) — the counters
+  // merged themselves above, but a goal's definition lives on the site row.
+  await mergeGoals(db, tableName, fromSiteId, intoSiteId);
+
   // The now-empty site row goes last: if anything above failed, the site is still listed
   // and the merge can be re-run.
   await db.send(
     new DeleteItemCommand({ TableName: tableName, Key: { pk: { S: "sites" }, sk: { S: `site#${fromSiteId}` } } }),
   );
   return { movedRows, days: days.size };
+}
+
+/**
+ * Carry one site record's CONVERSION GOALS onto another before the first is deleted (§7e).
+ *
+ * The counters merge themselves — `goal#`/`goalu#` are ordinary day-partition rows, so the
+ * arithmetic above already covers them. The DEFINITIONS don't: they live as one attribute
+ * on the site row, and whichever row is deleted takes its goals with it. That is a real
+ * loss in the ordinary case — rebuild, re-create the site, set up conversions, then restore
+ * last month's history — so both lists are unioned onto the surviving record.
+ *
+ * The survivor's own definition wins on a name clash (it is the record the live tag reports
+ * into), and the union is capped at MAX_GOALS so a merge can never exceed what the app
+ * itself would allow.
+ */
+export async function mergeGoals(
+  db: DynamoDBClient,
+  tableName: string,
+  fromSiteId: string,
+  intoSiteId: string,
+): Promise<Goal[]> {
+  const read = async (id: string): Promise<Goal[]> => {
+    const out = await db.send(
+      new QueryCommand({
+        TableName: tableName,
+        KeyConditionExpression: "pk = :p AND sk = :s",
+        ExpressionAttributeValues: { ":p": { S: "sites" }, ":s": { S: `site#${id}` } },
+      }),
+    );
+    return readGoals((out.Items?.[0] as Row | undefined)?.goals?.S);
+  };
+  const [from, into] = await Promise.all([read(fromSiteId), read(intoSiteId)]);
+  if (from.length === 0) return into; // nothing to carry over — leave the row untouched
+  const merged = [...into];
+  for (const g of from) {
+    if (merged.length >= MAX_GOALS) break;
+    if (!merged.some((x) => x.name === g.name)) merged.push(g);
+  }
+  if (merged.length === into.length) return into; // no change ⇒ no write
+  await db.send(
+    new UpdateItemCommand({
+      TableName: tableName,
+      Key: { pk: { S: "sites" }, sk: { S: `site#${intoSiteId}` } },
+      ConditionExpression: "attribute_exists(sk)",
+      UpdateExpression: "SET goals = :g",
+      ExpressionAttributeValues: { ":g": { S: JSON.stringify(merged) } },
+    }),
+  );
+  return merged;
 }
 
 /** A site's address reduced to the form two rows can be compared on. */
