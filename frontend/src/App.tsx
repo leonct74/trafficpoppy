@@ -4,6 +4,7 @@ import { Backup } from "./Backup";
 import { Button } from "./Button";
 import { Conversions } from "./Conversions";
 import { Dashboard } from "./Dashboard";
+import { Feedback } from "./Feedback";
 import { PaidProbe } from "./entitlement";
 import { Integrate } from "./Integrate";
 import { host, type AccessState } from "./host";
@@ -43,6 +44,9 @@ const SECTIONS = [
   // find. Its own tab — and deliberately NOT locked: "you can always remove everything"
   // is a platform promise, so it must stay reachable on the free tier too.
   { key: "remove", label: "Remove" },
+  // Mandatory in every poppy and always LAST (AGENTS.md §9a) — rate it, ask for a feature,
+  // report a bug, support the developer. Never locked: feedback is not a paid feature.
+  { key: "feedback", label: "Feedback" },
 ] as const;
 type SectionKey = (typeof SECTIONS)[number]["key"];
 
@@ -446,6 +450,9 @@ export function App() {
                 }}
               />
             )}
+          </div>
+          <div hidden={section !== "feedback"}>
+            <Feedback />
           </div>
           <div hidden={section !== "advanced"}>
             <TrueReach onStatus={setEdgeState} />

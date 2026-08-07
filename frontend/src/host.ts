@@ -76,7 +76,25 @@ export const host = {
   /** Opens the buyer's Stripe portal. REQUIRED to be reachable wherever a paid feature lives. */
   manageSubscription: (productId: string, options?: PurchaseTarget): Promise<void> =>
     call("manageSubscription", options === undefined ? [productId] : [productId, options]),
+
+  /**
+   * Feedback (capability `feedback:submit`) — what the mandatory Feedback tab submits. The host
+   * answers with the same anonymous per-install id it uses for purchases, so none of this needs
+   * an account and we never learn who rated us. The vendored `<agentspoppy-feedback>` element
+   * takes this object directly; these four methods are the shape it expects.
+   */
+  ratingInfo: (): Promise<RatingInfo> => call("ratingInfo", []),
+  rate: (stars: number): Promise<RatingInfo> => call("rate", [stars]),
+  sendFeatureRequest: (text: string): Promise<void> => call("sendFeatureRequest", [text]),
+  donate: (amountUsd: number, message?: string): Promise<void> =>
+    call("donate", message === undefined ? [amountUsd] : [amountUsd, message]),
 };
+
+export interface RatingInfo {
+  average: number;
+  count: number;
+  yours: number | null;
+}
 
 export interface PurchaseTarget {
   target?: string;

@@ -2,7 +2,7 @@
   "name": "traffic-poppy",
   "version": "0.1.0",
   "private": true,
-  "description": "Privacy-first web analytics that run entirely in your own AWS — an AgentsPoppy extension.",
+  "description": "Privacy-first web analytics that run entirely in your own AWS \u2014 an AgentsPoppy extension.",
   "type": "module",
   "license": "PolyForm-Shield-1.0.0",
   "workspaces": [
@@ -22,6 +22,8 @@
     "prebuild:sidecar": "npm run gen:backend",
     "build:sidecar": "node scripts/build-sidecar.mjs",
     "validate-manifest": "node scripts/validate-manifest.mjs",
+    "sync-feedback": "node ${AGENTSPOPPY_REPO:-../agentspoppy}/scripts/sync-feedback-tab.mjs --dest frontend/src/vendor",
+    "check-feedback": "node ${AGENTSPOPPY_REPO:-../agentspoppy}/scripts/sync-feedback-tab.mjs --dest frontend/src/vendor --check",
     "pack": "npm run build && node ${AGENTSPOPPY_REPO:-../agentspoppy}/scripts/pack-extension.mjs --src . --frontend frontend/dist",
     "install-dev": "npm run build && node ${AGENTSPOPPY_REPO:-../agentspoppy}/scripts/install-dev-extension.mjs --src . --frontend frontend/dist --backend backend/index.cjs",
     "certify": "npm --prefix ${AGENTSPOPPY_REPO:-../agentspoppy} run certify -- --extension $PWD"

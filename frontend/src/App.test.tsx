@@ -113,7 +113,7 @@ describe("the section tabs", () => {
     await screen.findByText(/TrafficPoppy is set up/i);
   };
 
-  it("shows six tabs — sites first, the paid ones in the middle, Remove last", async () => {
+  it("shows seven tabs — sites first, the paid ones in the middle, Feedback last", async () => {
     await openApp();
     const tabs = screen.getAllByRole("tab");
     expect(tabs.map((t) => t.textContent?.replace(" 🔒", ""))).toEqual([
@@ -123,6 +123,8 @@ describe("the section tabs", () => {
       "Conversions tracker",
       "Back up",
       "Remove",
+      // Mandatory, and always the LAST tab in every poppy (AGENTS.md §9a).
+      "Feedback",
     ]);
     expect(tabs[0]).toHaveAttribute("aria-selected", "true");
   });
@@ -141,6 +143,28 @@ describe("the section tabs", () => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(removeTab).toHaveAttribute("aria-selected", "true");
     expect(screen.getByRole("heading", { name: /remove/i })).toBeVisible();
+  });
+
+  /**
+   * The Feedback tab is mandatory in every poppy and must be the LAST one (AGENTS.md §9a). It is
+   * never locked: feedback is not a paid feature, and a user who can't reach it can't warn anyone.
+   */
+  it("Feedback is the last tab, unlocked, and mounts the platform's own element", async () => {
+    await openApp(); // no subscription
+    const tabs = screen.getAllByRole("tab");
+    const feedbackTab = tabs[tabs.length - 1]!;
+    expect(feedbackTab).toHaveTextContent("Feedback");
+    expect(feedbackTab).not.toHaveAttribute("aria-disabled");
+
+    await userEvent.setup().click(feedbackTab);
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(feedbackTab).toHaveAttribute("aria-selected", "true");
+    // The standard element, pointed at OUR public issue tracker — not a form of our own.
+    await waitFor(() => {
+      const el = document.querySelector("agentspoppy-feedback");
+      expect(el).toBeTruthy();
+      expect(el!.getAttribute("bugs")).toBe("https://github.com/leonct74/trafficpoppy/issues");
+    });
   });
 
   it("keeps inactive panels MOUNTED so True Reach polling survives tab switches", async () => {
