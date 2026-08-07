@@ -60,10 +60,15 @@ beforeEach(() => {
 const PAID = ["ollydigital.com"];
 
 describe("Conversions tracker — the setup surface", () => {
-  it("only offers subscribed sites, and shows the others locked rather than hiding them", async () => {
+  it("picks the website from ONE dropdown — a chip row doesn't survive tens of sites", async () => {
     render(<Conversions onlineDomains={[]} paidDomains={PAID} />);
-    expect(await screen.findByRole("button", { name: "ollydigital.com" })).toBeInTheDocument();
-    expect(screen.getByText(/other\.com 🔒/)).toBeInTheDocument();
+    const picker = (await screen.findByLabelText("Website")) as HTMLSelectElement;
+    expect(picker.tagName).toBe("SELECT");
+    expect(picker.value).toBe("s1");
+    // Locked sites stay visible but unselectable — the gate must be legible, and a site
+    // silently missing from the list reads as a bug.
+    const locked = screen.getByRole("option", { name: /other\.com 🔒/ }) as HTMLOptionElement;
+    expect(locked.disabled).toBe(true);
   });
 
   /** The whole design rests on this: ONE plain question, no jargon, two answers. */
@@ -118,6 +123,21 @@ describe("Conversions tracker — a goal that already exists", () => {
     mocked.listSites.mockResolvedValue({
       sites: [site({ goals: [{ name: "download", kind: "event", createdAt: "2026-08-01" }] })],
     });
+  });
+
+  it("keeps 'Add another conversion' ABOVE the goal cards, so it never scrolls out of sight", async () => {
+    render(<Conversions onlineDomains={[]} paidDomains={PAID} />);
+    const add = await screen.findByText(/Add another conversion/i);
+    const goal = screen.getByText(/download/, { selector: "strong" });
+    // FOLLOWING means the goal card comes after the add card in document order.
+    expect(add.compareDocumentPosition(goal) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("the two choice buttons carry readable text on a dark surface", async () => {
+    render(<Conversions onlineDomains={[]} paidDomains={PAID} />);
+    const choice = (await screen.findByText(/Someone presses a button or link/i)).closest("button")!;
+    // A <button> without our .btn class would fall back to the UA's black `buttontext`.
+    expect(choice.style.color).toBe("var(--poppy-text)");
   });
 
   it("says 'waiting for the first press' until one lands — the setup self-check", async () => {

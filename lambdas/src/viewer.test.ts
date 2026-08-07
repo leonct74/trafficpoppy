@@ -50,6 +50,21 @@ describe("the dashboard page", () => {
     expect(res.body).toMatch(/Sign in/);
   });
 
+  /**
+   * The page has real urls (/site/<id>), so every non-/api GET must serve it — otherwise a
+   * refresh or a shared link 404s (founder 2026-08-07). The API keeps its own 404s.
+   */
+  it("serves the app for any page url, so a refresh or a shared link lands", async () => {
+    for (const path of ["/site/abc", "/site/abc?days=30", "/anything/we/add/later"]) {
+      const res = await get(path);
+      expect(res.statusCode).toBe(200);
+      expect(res.headers["content-type"]).toMatch(/text\/html/);
+    }
+    // …but never for the API, and never as a reply to a write.
+    expect((await get("/api/secret", AUTH)).statusCode).toBe(404);
+    expect((await route({ method: "POST", path: "/site/abc", query: {}, headers: {} }, deps())).statusCode).toBe(404);
+  });
+
   it("carries the hardening headers a private dashboard needs", async () => {
     const res = await get("/dash");
     expect(res.headers["x-frame-options"]).toBe("DENY");

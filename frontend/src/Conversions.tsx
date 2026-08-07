@@ -102,30 +102,30 @@ export function Conversions(props: {
           </p>
         )}
 
-        {/* The site picker, in the same shape as the Back up tab: what's covered is named
-            before anything is set up, never discovered afterwards. */}
+        {/* One dropdown, not a row of chips (founder 2026-08-07): with tens of sites a chip
+            row is a wall. Locked sites stay VISIBLE but unselectable — the gate has to be
+            legible, and a site silently missing from the list reads as a bug. */}
         {unlocked.length > 0 && (
-          <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
-            {unlocked.map((s) => (
-              <button
-                key={s.id}
-                className={`tab${s.id === siteId ? " active" : ""}`}
-                onClick={() => setSiteId(s.id)}
-              >
-                {s.domain || s.name}
-              </button>
-            ))}
-            {locked.map((s) => (
-              <span
-                key={s.id}
-                className="tab"
-                style={{ opacity: 0.45, cursor: "default" }}
-                title="Requires Advanced Stats"
-              >
-                {s.domain || s.name} 🔒
-              </span>
-            ))}
-          </div>
+          <label className="field" style={{ marginBottom: 0, maxWidth: 380 }}>
+            <span>Website</span>
+            <select
+              className="select"
+              aria-label="Website"
+              value={siteId ?? ""}
+              onChange={(e) => setSiteId(e.target.value)}
+            >
+              {unlocked.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.domain || s.name}
+                </option>
+              ))}
+              {locked.map((s) => (
+                <option key={s.id} value={s.id} disabled>
+                  {s.domain || s.name} 🔒 — needs Advanced Stats
+                </option>
+              ))}
+            </select>
+          </label>
         )}
       </div>
 
@@ -167,23 +167,9 @@ function SiteGoals(props: {
         </div>
       )}
 
-      {goals.map((g) => (
-        <GoalCard
-          key={g.name}
-          goal={g}
-          stats={stats.get(g.name)}
-          uniques={props.range?.uniques ?? 0}
-          site={props.site}
-          onRemove={async () => {
-            try {
-              await props.onSave(goals.filter((x) => x.name !== g.name));
-            } catch (e) {
-              props.onError((e as Error).message);
-            }
-          }}
-        />
-      ))}
-
+      {/* ABOVE the goal cards, not below them (founder 2026-08-07): each goal card carries
+          its own setup block, so after two or three goals a bottom-anchored "add" control
+          is off-screen and the feature looks finished when it isn't. */}
       {adding !== null && (
         <AddGoal
           kind={adding}
@@ -211,6 +197,23 @@ function SiteGoals(props: {
           )}
         </div>
       )}
+
+      {goals.map((g) => (
+        <GoalCard
+          key={g.name}
+          goal={g}
+          stats={stats.get(g.name)}
+          uniques={props.range?.uniques ?? 0}
+          site={props.site}
+          onRemove={async () => {
+            try {
+              await props.onSave(goals.filter((x) => x.name !== g.name));
+            } catch (e) {
+              props.onError((e as Error).message);
+            }
+          }}
+        />
+      ))}
     </div>
   );
 }
@@ -235,12 +238,20 @@ function KindChoice(props: { onPick: (kind: Goal["kind"]) => void }) {
   );
 }
 
+/**
+ * These two are <button>s wearing a card, so they must re-state what a button's UA styles
+ * throw away: the browser's default `buttontext` is BLACK, which on the kit's dark surface
+ * is unreadable (founder 2026-08-07 — "the user cannot read it"), and the default font is
+ * the small system one, not ours.
+ */
 const choiceStyle: React.CSSProperties = {
   marginBottom: 0,
   textAlign: "left",
   cursor: "pointer",
   alignItems: "flex-start",
   gap: 4,
+  color: "var(--poppy-text)",
+  font: "inherit",
 };
 
 /** Step 2 — one field for a page goal, one for a button goal. Nothing else to decide. */

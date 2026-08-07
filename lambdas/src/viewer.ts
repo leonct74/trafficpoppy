@@ -82,7 +82,13 @@ export async function route(req: HttpRequest, deps: ViewerDeps): Promise<HttpRes
   const path = req.path.replace(/\/+$/, "") || "/";
 
   // The SPA itself is public: it has to load before anyone can log in. It contains no data.
-  if (req.method === "GET" && (path === "/" || path === "/dash")) {
+  //
+  // EVERY non-/api GET serves it, not just "/" — the page has real URLs now (/site/<id>),
+  // so a refresh, a bookmark or a shared link must land on the page it names instead of
+  // 404ing. The edge already routes everything except /t.js and /e here, so this is the
+  // only place that decision lives. (Founder ask 2026-08-07: "if a user refreshes the
+  // stats of one website, he lands on the home page with the list of domains".)
+  if (req.method === "GET" && !path.startsWith("/api/") && path !== "/favicon.ico") {
     return {
       statusCode: 200,
       headers: {

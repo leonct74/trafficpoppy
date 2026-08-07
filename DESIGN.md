@@ -321,6 +321,16 @@ without AWS credentials**. Solution = the MailPoppy admin/member split, reapplie
   Lambda serves is the FREE tier; the polished reports ship in an externally hosted client so
   they are not deployed into the customer's own account.
 
+**Real URLs (founder ask 2026-08-07).** The dashboard is a small website, not one screen:
+`/` is the site list, `/site/<id>?days=30` (or `?from=&to=`) is one site's statistics. The
+viewer Lambda serves the SPA for **every** non-`/api` GET, and the edge already sends
+everything except `/t.js` and `/e` to it — so a refresh, a bookmark or a link shared with a
+colleague lands where it says, back/forward work, and a site row is a real `<a>` that
+⌘-clicks into its own tab. Any view added later is just another path; the range lives in the
+url too, so "here's last month" is a link. A url naming a site the viewer can't see says
+"not available to you" in the same words whether or not it exists — the enumeration guard
+reaches the wording, not just the API.
+
 ## 7c. The external client — how a Verified poppy still monetises (founder decision 2026-07-25)
 
 > **AMENDED AGAIN (founder, 2026-08-04, later the same day): the browser dashboard is
@@ -1187,3 +1197,15 @@ materializes.
   goal event can never become a page view — its own flood cap, and a malformed name counts
   nothing. No manifest change and no new AWS permission: it is counters in the table that
   already exists, so this ships as ONE stack update.
+- 2026-08-07 — **Conversions tracker UX pass + the dashboard got real URLs** (founder
+  review after the first three live goals on agentspoppy.com/download). Three fixes and one
+  feature: the site picker is a **dropdown**, not a chip row (a row doesn't survive tens of
+  sites); **"Add another conversion" sits ABOVE the goal cards**, because each goal card
+  carries its own setup block and a bottom-anchored control disappears after two or three
+  goals — making the feature look finished when it isn't; the two choice buttons re-state
+  `color` and `font`, since a `<button>` that isn't wearing our `.btn` class falls back to
+  the UA's BLACK `buttontext` — unreadable on the kit's dark surface. And the online
+  dashboard now has routing (§7b): the founder's reason was the right one — a refresh used
+  to dump you back on the list, and this page is about to grow more views. Its router is
+  tested for real, in jsdom, by driving the actual served script: deep link, refresh,
+  click-through, Back.

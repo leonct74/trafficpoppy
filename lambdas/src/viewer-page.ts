@@ -59,7 +59,7 @@ button.ghost{background:transparent;border:1px solid var(--line);color:var(--fg)
 .brow>span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .brow>span:last-child{font-variant-numeric:tabular-nums;color:var(--mut)}
 .bar{background:var(--acc);opacity:.75;height:8px;border-radius:4px}
-.site{display:flex;justify-content:space-between;align-items:center;padding:14px 4px;border-bottom:1px solid var(--line);cursor:pointer}
+.site{display:flex;justify-content:space-between;align-items:center;padding:14px 4px;border-bottom:1px solid var(--line);cursor:pointer;color:inherit;text-decoration:none}
 .site:hover{background:#1b222c}
 .site:last-child{border-bottom:0}
 .hide{display:none}
@@ -206,8 +206,62 @@ function start(){
   api("/api/sites").then(function(d){
     sites=d.sites||[];gated=!!d.gated;
     $("who").textContent=(d.viewer&&d.viewer.email)||"";
-    renderSites();
+    render();
   }).catch(function(e){$("err").innerHTML='<div class="err">'+esc(e.message)+"</div>"});
+}
+
+// ── routing (founder ask 2026-08-07) ──────────────────────────────────────────────
+// The dashboard has REAL urls: "/" is the site list, "/site/<id>?days=30" is one site's
+// statistics. Refreshing keeps you where you were, links are shareable, back and forward
+// behave — and as this grows into more pages, every new view is just another path. The
+// viewer Lambda serves this page for any non-/api path, so no url can 404 into a blank.
+function currentRoute(){
+  var m=/^\\/site\\/([^/?#]+)/.exec(location.pathname);
+  var q=new URLSearchParams(location.search);
+  var f=q.get("from"),t=q.get("to");
+  var d=parseInt(q.get("days"),10);
+  return {
+    id:m?decodeURIComponent(m[1]):null,
+    days:(d>=1&&d<=90)?d:7,
+    custom:(f&&t&&f<=t)?{from:f,to:t}:null
+  };
+}
+function siteUrl(id,opts){
+  var o=opts||{};
+  var q=o.custom?("?from="+encodeURIComponent(o.custom.from)+"&to="+encodeURIComponent(o.custom.to))
+    :(o.days&&o.days!==7?("?days="+o.days):"");
+  return "/site/"+encodeURIComponent(id)+q;
+}
+function go(url,replace){
+  if(url!==location.pathname+location.search){
+    history[replace?"replaceState":"pushState"]({},"",url);
+  }
+  render();
+}
+window.addEventListener("popstate",function(){render()});
+
+/** Draw whatever the current url asks for. The ONE place a view is chosen. */
+function render(){
+  if(!tok)return;
+  var r=currentRoute();
+  if(!r.id){cur=null;custom=null;document.title="Analytics";renderSites();return}
+  var site=null;
+  for(var i=0;i<sites.length;i++)if(sites[i].id===r.id)site=sites[i];
+  if(!site){renderMissing();return}
+  cur=site;days=r.days;custom=r.custom;
+  document.title=site.name+" · Analytics";
+  loadDetail();
+}
+
+/** A url naming a site this viewer can't see. Same wording either way — whether it exists
+ *  is not something the dashboard may reveal (the §7b enumeration guard). */
+function renderMissing(){
+  show($("sites"),false);show($("detail"),true);
+  $("title").textContent="Not available";
+  document.title="Analytics";
+  $("detail").innerHTML='<div class="card"><p class="mut">That site isn\\'t available to you. It may not be shared with your account, or it may have been removed.</p>'
+    +'<button class="ghost tab" id="home">← All sites</button></div>';
+  $("home").addEventListener("click",function(){go("/")});
 }
 
 function renderSites(){
@@ -220,15 +274,18 @@ function renderSites(){
       ?'<p class="mut">This online dashboard is part of the Advanced Stats upgrade, which isn\\'t set up yet. The site owner can turn it on from the TrafficPoppy app.</p>'
       :'<p class="mut">No sites have been shared with you yet.</p>';
     return}
-  $("sites").innerHTML=sites.map(function(s,i){
-    return '<div class="site" data-i="'+i+'"><div><strong>'+esc(s.name)+'</strong><div class="mut">'+esc(s.domain)+"</div></div><span class=\\"mut\\">View →</span></div>";
+  // Real links, so a middle-click or ⌘-click opens a site in its own tab like any website.
+  $("sites").innerHTML=sites.map(function(s){
+    return '<a class="site" href="'+esc(siteUrl(s.id))+'"><div><strong>'+esc(s.name)+'</strong><div class="mut">'+esc(s.domain)+"</div></div><span class=\\"mut\\">View →</span></a>";
   }).join("");
   Array.prototype.forEach.call($("sites").querySelectorAll(".site"),function(el){
-    el.addEventListener("click",function(){open(sites[+el.getAttribute("data-i")])});
+    el.addEventListener("click",function(ev){
+      // Leave modified clicks to the browser — that's what makes them real links.
+      if(ev.metaKey||ev.ctrlKey||ev.shiftKey||ev.altKey||ev.button)return;
+      ev.preventDefault();go(el.getAttribute("href"));
+    });
   });
 }
-
-function open(site){cur=site;custom=null;loadDetail()}
 
 function loadDetail(){
   show($("sites"),false);show($("detail"),true);
@@ -490,15 +547,17 @@ function renderDetail(r,live){
   html+="</div>";
 
   $("detail").innerHTML=html;
-  $("back").addEventListener("click",renderSites);
+  // Every navigation goes through the url — including the range, so a refresh or a shared
+  // link comes back to the same period, not to a default week.
+  $("back").addEventListener("click",function(){go("/")});
   Array.prototype.forEach.call($("detail").querySelectorAll(".tab[data-d]"),function(el){
-    el.addEventListener("click",function(){custom=null;days=+el.getAttribute("data-d");loadDetail()});
+    el.addEventListener("click",function(){go(siteUrl(cur.id,{days:+el.getAttribute("data-d")}))});
   });
   $("customBtn").addEventListener("click",function(){$("customWrap").classList.toggle("hide")});
   if(custom){$("fromD").value=custom.from;$("toD").value=custom.to;}
   $("applyD").addEventListener("click",function(){
     var f=$("fromD").value,t=$("toD").value;
-    if(f&&t&&f<=t){custom={from:f,to:t};loadDetail()}
+    if(f&&t&&f<=t)go(siteUrl(cur.id,{custom:{from:f,to:t}}));
   });
   // One delegated handler covers every list's Show-all and CSV controls.
   $("detail").addEventListener("click",function(ev){
