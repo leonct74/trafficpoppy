@@ -302,15 +302,24 @@ function loadDetail(){
 }
 
 // One CSV per list card, built from the same rows the bars render — nothing re-fetched.
+function cell(v){return '"'+String(v==null?"":v).replace(/"/g,'""')+'"'}
 function toCsv(rows){
-  return "name,count\\n"+rows.map(function(r){
-    var k=String(r.key==null?"":r.key);
-    return '"'+k.replace(/"/g,'""')+'",'+r.count;
-  }).join("\\n");
+  return "name,count\\n"+rows.map(function(r){return cell(r.key)+","+r.count}).join("\\n");
+}
+// Conversions carry more than a name and a count, so they get their own columns — this is
+// the number people paste into a board report, and "9" without its rate says nothing.
+function goalsCsv(gs,uniques){
+  return "conversion,type,target,conversions,visitors who converted,rate %,visitors,previous period\\n"
+    +gs.map(function(g){
+      var people=g.converters||g.conversions;
+      return [cell(g.name),cell(g.kind==="page"?"page":"button or link"),
+        cell(g.kind==="page"?(g.path||""):'data-tp-goal="'+g.name+'"'),
+        g.conversions,g.converters,(uniques>0?Math.round(people/uniques*1000)/10:""),uniques,g.prevConversions].join(",");
+    }).join("\\n");
 }
 function downloadCsv(id){
   var e=csvStore[id];if(!e)return;
-  var blob=new Blob([toCsv(e.rows)],{type:"text/csv"});
+  var blob=new Blob([e.csv||toCsv(e.rows)],{type:"text/csv"});
   var a=document.createElement("a");
   a.href=URL.createObjectURL(blob);
   a.download=e.name+".csv";
@@ -520,6 +529,8 @@ function renderDetail(r,live){
   // breakdowns because it outranks any list of pages. Counts and distinct converters —
   // never who.
   var gs=r.goals||[];
+  var gid="g"+(++csvSeq);
+  if(gs.length)csvStore[gid]={name:"conversions",csv:goalsCsv(gs,r.uniques)};
   if(gs.length)html+='<div class="card"><h2>Conversions</h2>'+gs.map(function(g){
     var rate=r.uniques>0?Math.round((g.converters||g.conversions)/r.uniques*1000)/10:null;
     return '<div class="brow" style="grid-template-columns:minmax(0,1.4fr) auto auto auto"><span>'
@@ -527,7 +538,9 @@ function renderDetail(r,live){
       +'<span style="font-variant-numeric:tabular-nums">'+nfmt(g.conversions)+' <span class="mut">conversions</span></span>'
       +'<span class="mut">'+(g.converters?nfmt(g.converters)+" visitors":"")+'</span>'
       +'<span>'+(rate===null?"":rate+"% ")+delta(g.conversions,g.prevConversions)+"</span></div>";
-  }).join("")+'<p class="mut" style="margin:8px 0 0">Rate compares converting visitors with unique visitors in the same period.</p></div>';
+  }).join("")
+    +'<div class="row" style="margin-top:8px"><button class="ghost tab" data-csv="'+gid+'">CSV</button></div>'
+    +'<p class="mut" style="margin:8px 0 0">Rate compares converting visitors with unique visitors in the same period.</p></div>';
 
   var mv=movers(r.topPages,p.topPages);
   if(mv)html+='<div class="card"><h2>Top movers vs the previous period</h2>'+mv.map(function(m){

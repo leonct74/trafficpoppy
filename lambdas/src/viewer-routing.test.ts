@@ -22,10 +22,10 @@ const RANGE = {
     from: "2026-08-01",
     to: "2026-08-07",
     days: [{ day: "2026-08-07", views: 10, uniques: 5 }],
-    views: 10,
-    uniques: 5,
-    topPages: [],
-    topReferrers: [],
+    views: 400,
+    uniques: 200,
+    topPages: [{ key: "/pricing", count: 120 }],
+    topReferrers: [{ key: "news.ycombinator.com", count: 30 }],
     browsers: [],
     os: [],
     sizes: [],
@@ -36,7 +36,10 @@ const RANGE = {
     hours: [],
     newVisitors: 0,
     returningVisitors: 0,
-    goals: [],
+    goals: [
+      { name: "download", kind: "event", conversions: 30, converters: 20, prevConversions: 12 },
+      { name: "thanks", kind: "page", path: "/thank-you", conversions: 8, converters: 7, prevConversions: 0 },
+    ],
     entries: [],
     edges: [],
     receiving: true,
@@ -141,5 +144,53 @@ describe("the dashboard's urls (§7b routing)", () => {
     await settle();
     expect(text(win)).toMatch(/isn't available to you/i);
     expect(text(win)).not.toMatch(/deleted|no such site/i);
+  });
+});
+
+/**
+ * Conversions are the numbers people put in a report, so they must leave the page as a
+ * file like every other list (founder 2026-08-07: "probably one of the most important
+ * metrics we track"). Their CSV carries more than name+count — a bare "30" without its
+ * rate says nothing.
+ */
+describe("the conversions CSV", () => {
+  it("downloads the goals with their rate, converters and previous period", async () => {
+    const { win } = open("https://stats.example.com/site/s1");
+    await settle();
+
+    // Stand in for the browser's download plumbing and capture what the page built.
+    let csv = "";
+    let filename = "";
+    const RealBlob = win.Blob;
+    // @ts-expect-error — a Blob subclass that remembers its text
+    win.Blob = class extends RealBlob {
+      constructor(parts: BlobPart[], opts?: BlobPropertyBag) {
+        super(parts, opts);
+        csv = String(parts[0]);
+      }
+    };
+    win.URL.createObjectURL = () => "blob:stub";
+    win.URL.revokeObjectURL = () => {};
+    win.HTMLAnchorElement.prototype.click = function (this: HTMLAnchorElement) {
+      if (this.download) filename = this.download;
+    };
+
+    const card = [...win.document.querySelectorAll(".card")].find((c) => c.textContent?.includes("Conversions"))!;
+    (card.querySelector("[data-csv]") as HTMLElement).click();
+
+    expect(filename).toBe("conversions.csv");
+    const [header, ...rows] = csv.split("\n");
+    expect(header).toBe("conversion,type,target,conversions,visitors who converted,rate %,visitors,previous period");
+    // 20 converters of 200 visitors = 10%; the button goal names the attribute to look for.
+    expect(rows[0]).toBe('"download","button or link","data-tp-goal=""download""",30,20,10,200,12');
+    expect(rows[1]).toBe('"thanks","page","/thank-you",8,7,3.5,200,0');
+  });
+
+  it("every list card still exports too — conversions did not displace them", async () => {
+    const { win } = open("https://stats.example.com/site/s1");
+    await settle();
+    const ids = [...win.document.querySelectorAll("[data-csv]")].map((b) => b.getAttribute("data-csv"));
+    expect(new Set(ids).size).toBe(ids.length); // no id collides with the conversions card
+    expect(ids.length).toBeGreaterThan(1);
   });
 });

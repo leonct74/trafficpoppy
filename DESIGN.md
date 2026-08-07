@@ -1224,3 +1224,9 @@ materializes.
   conversions travelled, because a number that moves silently is a number nobody trusts.
   The per-visitor `uniqg#` rows stay out of backups, exactly like the daily-unique hashes:
   they die with the salt, by design.
+- 2026-08-07 — **Conversions export as CSV from the online statistics page** (founder:
+  "probably one of the most important metrics we track"). Their CSV is not the generic
+  name+count one every other list uses: a bare "30" is unreadable in a board report, so the
+  file carries the goal, its type, what it watches, conversions, converting visitors, the
+  rate, the visitor base the rate is computed from, and the previous period. Tested by
+  clicking the button in a real DOM and reading the blob the page builds.
