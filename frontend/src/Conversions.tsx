@@ -248,6 +248,11 @@ const choiceStyle: React.CSSProperties = {
   marginBottom: 0,
   textAlign: "left",
   cursor: "pointer",
+  // A <button> lays its children out inline, so the title and the description ran into
+  // each other ("…reaches a pageA thank-you page…"). The kit's .stack is margin-based and
+  // can't fix that on its own — the column has to be declared here.
+  display: "flex",
+  flexDirection: "column",
   alignItems: "flex-start",
   gap: 4,
   color: "var(--poppy-text)",

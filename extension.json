@@ -1,7 +1,7 @@
 {
   "id": "com.trafficpoppy.desktop",
   "name": "TrafficPoppy",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Privacy-first web analytics that run entirely in your own AWS \u2014 a 1 KB script tag, no cookies, no banners, and nobody in the data path but you.",
   "icon": "frontend/trafficpoppy-icon.png",
   "permissionSet": {
