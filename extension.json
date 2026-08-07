@@ -187,6 +187,6 @@
     "connection:read",
     "backend:invoke",
     "commerce:purchase",
-    "feedback:submit"
+    "host:openExternal"
   ]
 }
