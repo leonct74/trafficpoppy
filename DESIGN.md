@@ -1230,3 +1230,27 @@ materializes.
   file carries the goal, its type, what it watches, conversions, converting visitors, the
   rate, the visitor base the rate is computed from, and the previous period. Tested by
   clicking the button in a real DOM and reading the blob the page builds.
+- 2026-08-09 — **The online statistics page, read on a phone** (founder, from the live site):
+  three defects, all of them "the number is there but you cannot get at it". (1) The
+  **traffic-flow chart was cut off at the bottom** whenever a site had a lopsided spread of
+  sources — the classic one big `direct` plus a tail of small referrers. The cause was that
+  the chart's height was a constant (the old `ROWH` expression cancelled out to exactly 560
+  every time) while `layout()` gives every node a 14px MINIMUM so it stays visible: enough
+  clamped minimums and the column is taller than the box drawn around it, and SVG simply
+  clips what sticks out. The height is now DERIVED from the finished layout — lay the nodes
+  out, measure the tallest column, size the viewBox to that plus a bottom margin. An even
+  spread still gets the 560px band it always had; only the lopsided case grows, which is the
+  only case that was broken. (2) Long referrers and paths ran off the SIDE for the same
+  reason, so labels are trimmed to what their column can hold with the full text kept in the
+  tooltip. (3) **"Views by hour" and "Right now" gave up a column's value only on hover**,
+  which on a touch screen means never. Both now carry a vertical scale (0 / half / max, and
+  "peak/min" for the ticker) so a column reads without any interaction at all, AND every
+  column is a full-height transparent tap target that writes its value into a readout line
+  under the chart — full-height because a quiet hour draws a 0px bar and would otherwise be
+  unhittable. The same handler serves mouse hover, so the desktop loses nothing. The hourly
+  chart names the busiest hour before anyone touches anything.
+  Fixed alongside, because the new handler would have multiplied it: `#detail` outlives every
+  render, so the delegated click listener added at the END of `renderDetail` was stacking a
+  fresh copy on each range change — after three renders one CSV click downloaded three files.
+  Bound once now. Tests drive the real page in jsdom (`viewer-charts.test.ts`) and were
+  checked against the OLD code first to prove they catch the bug.

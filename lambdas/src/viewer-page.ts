@@ -64,6 +64,11 @@ button.ghost{background:transparent;border:1px solid var(--line);color:var(--fg)
 .site:last-child{border-bottom:0}
 .hide{display:none}
 svg text{fill:var(--mut);font-size:10px}
+/* Chart columns are tap targets first: a phone has no hover, so the value has to arrive
+   on touch. .sel is the chart cursor — it must survive the finger lifting off. */
+svg rect.col{cursor:pointer}
+svg rect.col.sel{fill:var(--acc2);opacity:.18}
+.readout{margin-top:10px;min-height:19px;font-variant-numeric:tabular-nums}
 .flag{margin-right:6px}
 </style>
 </head>
@@ -330,18 +335,39 @@ function downloadCsv(id){
 // ── charts (hand-rolled SVG — no libraries, nothing loaded from anywhere) ──────────
 
 // Daily trend: views area + uniques line. Hour bars when the range is a single day.
+// A transparent, full-height column that carries a bar's value. Touch has no hover, so
+// this is what a finger lands on; on a desktop the same rect answers the mouse. The
+// <title> keeps the native tooltip for pointer users who expect one.
+function hitCol(x,w,y,h,label,value){
+  return '<rect class="col" x="'+x+'" y="'+y+'" width="'+w+'" height="'+h+'" fill="transparent"'
+    +' data-lbl="'+esc(label)+'" data-val="'+esc(value)+'"><title>'+esc(label)+" — "+esc(value)+"</title></rect>";
+}
+
 function trendSvg(r){
-  var W=920,H=200,P=28;
+  var W=920,H=200,P=28,PL=54;
   if((r.days||[]).length<=1){
     var hours=r.hours||[],hm=Math.max.apply(null,hours.concat([1]));
-    var bw=(W-2*P)/24;
+    var bw=(W-PL-P)/24;
+    // A phone has no hover (founder 2026-08-09), so the numbers have to be readable
+    // standing still: a scale down the left says roughly what a column is worth, and
+    // tapping one says exactly. PL is the room the scale labels need.
+    var grid="";
+    [0,0.5,1].forEach(function(f){
+      var gy=H-P-f*(H-2*P);
+      grid+='<line x1="'+PL+'" y1="'+gy+'" x2="'+(W-P)+'" y2="'+gy+'" stroke="var(--line)" stroke-width="1"/>'
+        +'<text x="'+(PL-8)+'" y="'+(gy+3)+'" text-anchor="end">'+nfmt(Math.round(hm*f))+"</text>";
+    });
     var bars="";
     for(var i=0;i<24;i++){
-      var h=Math.round((hours[i]||0)/hm*(H-2*P));
-      bars+='<rect x="'+(P+i*bw+1)+'" y="'+(H-P-h)+'" width="'+(bw-2)+'" height="'+h+'" rx="2" fill="var(--acc)" opacity="0.8"><title>'+i+':00 — '+nfmt(hours[i]||0)+' views</title></rect>';
-      if(i%4===0)bars+='<text x="'+(P+i*bw+bw/2)+'" y="'+(H-8)+'" text-anchor="middle">'+i+':00</text>';
+      var v=hours[i]||0,h=Math.round(v/hm*(H-2*P)),lbl=(i<10?"0":"")+i+":00";
+      // The hit area is the WHOLE column, not the drawn bar — a quiet hour is a 0px bar
+      // and would otherwise be impossible to tap. The bar itself takes no pointer events
+      // so the tap always lands on the column.
+      bars+=hitCol(PL+i*bw,bw,0,H-P,lbl+" UTC",nfmt(v)+" views")
+        +'<rect x="'+(PL+i*bw+1)+'" y="'+(H-P-h)+'" width="'+(bw-2)+'" height="'+h+'" rx="2" fill="var(--acc)" opacity="0.8" pointer-events="none"/>';
+      if(i%4===0)bars+='<text x="'+(PL+i*bw+bw/2)+'" y="'+(H-8)+'" text-anchor="middle" pointer-events="none">'+lbl+"</text>";
     }
-    return '<svg viewBox="0 0 '+W+" "+H+'" style="width:100%;height:auto">'+bars+"</svg>";
+    return '<svg viewBox="0 0 '+W+" "+H+'" style="width:100%;height:auto">'+grid+bars+"</svg>";
   }
   var ds=r.days||[];if(!ds.length)return "";
   var max=1;for(var j=0;j<ds.length;j++)max=Math.max(max,ds[j].views);
@@ -390,20 +416,31 @@ function flowSvg(r){
   if(exits>0)dests.push({k:"left the site",c:exits});
   if(!srcs.length||!pages.length)return "";
 
-  var W=920,PADX=190,GAP=6,ROWH=560/Math.max(srcs.length,pages.length,dests.length,1);
-  var H=Math.min(560,Math.max(220,ROWH*Math.max(srcs.length,pages.length,dests.length)));
+  // Height comes from the layout, not the other way round (founder 2026-08-09: with many
+  // sources the chart was cut off at the bottom). Ribbon heights are proportional, but a
+  // node never goes below MINH or it would be invisible — so a lopsided column (one big
+  // "direct" plus a tail of small ones) needs MORE room than the proportional total. We
+  // lay out first, then size the viewBox to the tallest column, plus a bottom margin.
+  var W=920,PADX=190,GAP=6,MINH=14,BASE=560,PADB=12;
   function layout(list){
     var total=0;list.forEach(function(n){total+=n.c});
-    var scale=(H-GAP*(list.length+1))/Math.max(1,total),yy=GAP;
+    var scale=(BASE-GAP*(list.length+1))/Math.max(1,total),yy=GAP;
     return list.map(function(n){
-      var h=Math.max(14,n.c*scale);var o={k:n.k,c:n.c,y:yy,h:h};yy+=h+GAP;return o;
+      var h=Math.max(MINH,n.c*scale);var o={k:n.k,c:n.c,y:yy,h:h};yy+=h+GAP;return o;
     });
   }
   var L=layout(srcs),M=layout(pages),R=layout(dests);
+  function bottom(col){return col.length?col[col.length-1].y+col[col.length-1].h:0}
+  var H=Math.round(Math.max(220,bottom(L),bottom(M),bottom(R))+PADB);
   var x1=PADX,x2=W/2-70,x3=W/2+70,x4=W-PADX;
-  function node(n,x,anchor,label){
+  // Labels are clipped by the viewBox, never wrapped, so a long path used to run off the
+  // side of the chart. Trim to what the column can hold; the full text stays in the tooltip.
+  function trim(s,max){return s.length>max?s.slice(0,max-1)+"…":s}
+  function node(n,x,anchor,label,max){
     return '<rect x="'+(anchor==="end"?x-8:x)+'" y="'+n.y+'" width="8" height="'+n.h+'" rx="3" fill="var(--acc2)" opacity="0.9"/>'
-      +'<text x="'+(anchor==="end"?x-14:x+14)+'" y="'+(n.y+n.h/2+3)+'" text-anchor="'+anchor+'" style="font-size:11px;fill:var(--fg)">'+esc(label)+' <tspan style="fill:var(--mut)">'+nfmt(n.c)+"</tspan></text>";
+      +'<text x="'+(anchor==="end"?x-14:x+14)+'" y="'+(n.y+n.h/2+3)+'" text-anchor="'+anchor+'" style="font-size:11px;fill:var(--fg)">'
+      +'<title>'+esc(label)+" — "+nfmt(n.c)+"</title>"
+      +esc(trim(label,max))+' <tspan style="fill:var(--mut)">'+nfmt(n.c)+"</tspan></text>";
   }
   // Ribbons: proportionally slice each node's height across its links, in rank order.
   // Colour carries direction (founder feedback): GREEN = traffic coming in,
@@ -431,13 +468,13 @@ function flowSvg(r){
 
   return '<svg viewBox="0 0 '+W+" "+H+'" style="width:100%;height:auto">'
     +ribbons(inLinks,L,M,x1+8,x2,"var(--ok)")+ribbons(outLinks,M,R,x3,x4-8,"#ff7b72")
-    +L.map(function(n){return node(n,x1,"end",n.k==="direct"?"direct / typed in":n.k)}).join("")
-    +M.map(function(n){return node(n,x2,"start",n.k)}).join("")
-    +R.map(function(n){return node(n,x4,"end",n.k.replace(/^→ /,""))}).join("")
+    +L.map(function(n){return node(n,x1,"end",n.k==="direct"?"direct / typed in":n.k,24)}).join("")
+    +M.map(function(n){return node(n,x2,"start",n.k,16)}).join("")
+    +R.map(function(n){return node(n,x4,"end",n.k.replace(/^→ /,""),24)}).join("")
     +"</svg>";
 }
 
-var FOLD=8,csvSeq=0;
+var FOLD=8,csvSeq=0,detailBound=false;
 function bars(title,rows,empty,labelOf){
   if(!rows||!rows.length)return '<div class="card"><h2>'+title+'</h2><p class="mut">'+empty+"</p></div>";
   var id="l"+(++csvSeq);
@@ -483,13 +520,41 @@ function movers(cur,prev){
 }
 
 // "Right now": per-minute views over the last half hour, from the TTL'd ticker partition.
+// Too short for a full axis, so the scale is one line: the busiest minute in the window,
+// which is what the tallest bar is worth. Every minute is a tappable column.
 function liveSvg(l){
-  var W=340,H=44,n=l.minutes.length,bw=W/n;
+  var W=340,H=58,PT=13,n=l.minutes.length,bw=W/n;
   var max=1;l.minutes.forEach(function(m){max=Math.max(max,m.views)});
-  return '<svg viewBox="0 0 '+W+" "+H+'" style="width:100%;height:44px">'+l.minutes.map(function(m,i){
-    var h=m.views?Math.max(3,Math.round(m.views/max*(H-4))):2;
-    return '<rect x="'+(i*bw+1)+'" y="'+(H-h)+'" width="'+(bw-2)+'" height="'+h+'" rx="1.5" fill="'+(m.views?"var(--ok)":"#2c333d")+'"><title>'+m.minute.slice(11)+" — "+nfmt(m.views)+"</title></rect>";
+  var scale='<line x1="0" y1="'+PT+'" x2="'+W+'" y2="'+PT+'" stroke="var(--line)" stroke-width="1"/>'
+    +'<text x="0" y="'+(PT-4)+'">'+nfmt(max)+"/min</text>";
+  return '<svg viewBox="0 0 '+W+" "+H+'" style="width:100%;height:58px">'+scale+l.minutes.map(function(m,i){
+    var h=m.views?Math.max(3,Math.round(m.views/max*(H-PT-2))):2;
+    var lbl=m.minute.slice(11)+" UTC";
+    return hitCol(i*bw,bw,0,H,lbl,nfmt(m.views)+" views")
+      +'<rect x="'+(i*bw+1)+'" y="'+(H-h)+'" width="'+(bw-2)+'" height="'+h+'" rx="1.5" fill="'+(m.views?"var(--ok)":"#2c333d")+'" pointer-events="none"/>';
   }).join("")+"</svg>";
+}
+
+// The default line under an hourly chart: without touching anything you already learn the
+// one number people look for. Empty when nothing has been recorded yet — never a fake 00:00.
+function peakHour(hours){
+  var hs=hours||[],bi=-1;
+  for(var i=0;i<hs.length;i++)if(hs[i]>0&&(bi<0||hs[i]>hs[bi]))bi=i;
+  if(bi<0)return "";
+  return "Busiest "+(bi<10?"0":"")+bi+":00 UTC — "+nfmt(hs[bi])+" views";
+}
+
+// Writing a column's value into its card's readout line. Called for a tap AND for a mouse
+// hover, so phone and desktop behave the same. The picked column stays highlighted, which
+// is what makes a tap feel like it did something.
+function pickCol(el){
+  var lbl=el.getAttribute("data-lbl");if(!lbl)return;
+  var svg=el.ownerSVGElement;
+  if(svg){var prev=svg.querySelector("rect.col.sel");if(prev)prev.setAttribute("class","col")}
+  el.setAttribute("class","col sel");
+  var card=el.closest?el.closest(".card"):null;
+  var ro=card?card.querySelector(".readout"):null;
+  if(ro)ro.textContent=lbl+" — "+el.getAttribute("data-val");
 }
 
 function renderDetail(r,live){
@@ -518,10 +583,12 @@ function renderDetail(r,live){
   if(!r.receiving)html+='<div class="card mut">No visits recorded in this period yet.</div>';
 
   if(live&&live.minutes)html+='<div class="card"><div class="spread"><h2 style="margin:0">Right now</h2>'
-    +'<span class="mut">'+nfmt(live.views)+" views in the last 30 minutes</span></div>"+liveSvg(live)+"</div>";
+    +'<span class="mut">'+nfmt(live.views)+" views in the last 30 minutes</span></div>"+liveSvg(live)
+    +'<div class="readout mut">Tap a minute for its count</div></div>';
 
-  var trend=trendSvg(r);
-  if(trend)html+='<div class="card"><h2>'+((r.days||[]).length<=1?"Views by hour (UTC)":"Views & visitors by day")+"</h2>"+trend+"</div>";
+  var trend=trendSvg(r),hourly=(r.days||[]).length<=1;
+  if(trend)html+='<div class="card"><h2>'+(hourly?"Views by hour (UTC)":"Views & visitors by day")+"</h2>"+trend
+    +(hourly?'<div class="readout mut">'+(peakHour(r.hours)||"No views recorded yet")+"</div>":"")+"</div>";
   var flow=flowSvg(r);
   if(flow)html+='<div class="card"><h2>Traffic flow — in, through, and out</h2>'+flow+'<p class="mut" style="margin:8px 0 0"><span style="color:var(--ok)">■</span> traffic coming in · <span style="color:#ff7b72">■</span> traffic going on or leaving. Counts, never individual visitors.</p></div>';
 
@@ -572,13 +639,24 @@ function renderDetail(r,live){
     var f=$("fromD").value,t=$("toD").value;
     if(f&&t&&f<=t)go(siteUrl(cur.id,{custom:{from:f,to:t}}));
   });
-  // One delegated handler covers every list's Show-all and CSV controls.
-  $("detail").addEventListener("click",function(ev){
-    var el=ev.target;if(!el||!el.getAttribute)return;
-    var more=el.getAttribute("data-more"),csv=el.getAttribute("data-csv");
-    if(more){var m=$("more-"+more);var open=m.classList.toggle("hide");el.textContent=open?"Show all "+(csvStore[more].rows.length):"Show fewer";}
-    if(csv)downloadCsv(csv);
-  });
+  // One delegated handler covers every list's Show-all and CSV controls, and every chart
+  // column. Bound ONCE: #detail survives each render, so re-binding here would stack a
+  // fresh copy on every range change and a single CSV click would download three files.
+  if(!detailBound){
+    detailBound=true;
+    $("detail").addEventListener("click",function(ev){
+      var el=ev.target;if(!el||!el.getAttribute)return;
+      var more=el.getAttribute("data-more"),csv=el.getAttribute("data-csv");
+      if(more){var m=$("more-"+more);var open=m.classList.toggle("hide");el.textContent=open?"Show all "+(csvStore[more].rows.length):"Show fewer";}
+      if(csv)downloadCsv(csv);
+      if(el.getAttribute("data-lbl"))pickCol(el);
+    });
+    // Hover is a bonus for mice, not the only way in — touch is served by the click above.
+    $("detail").addEventListener("mouseover",function(ev){
+      var el=ev.target;
+      if(el&&el.getAttribute&&el.getAttribute("data-lbl"))pickCol(el);
+    });
+  }
 }
 
 // Boot: same-tab token first (fast path), else the refresh token silently restores the
