@@ -95,14 +95,20 @@ const settle = async (times = 6) => {
 const card = (win: Window, title: string) =>
   [...win.document.querySelectorAll(".card")].find((c) => c.querySelector("h2")?.textContent?.startsWith(title))!;
 
-const viewBox = (svg: SVGSVGElement) => svg.getAttribute("viewBox")!.split(" ").map(Number);
+const viewBox = (svg: SVGSVGElement) => {
+  const [x = 0, y = 0, w = 0, h = 0] = svg.getAttribute("viewBox")!.split(" ").map(Number);
+  return { x, y, w, h };
+};
+
+/** One column of a chart, as an element that can be clicked. */
+const col = (list: Element[], i: number) => list[i]! as unknown as HTMLElement;
 
 describe("traffic flow fits inside its own chart", () => {
   it("the viewBox grows to hold every node — nothing is cut off at the bottom", async () => {
     const win = open();
     await settle();
     const svg = card(win, "Traffic flow").querySelector("svg") as unknown as SVGSVGElement;
-    const [, , , h] = viewBox(svg);
+    const { h } = viewBox(svg);
 
     // Every node rect must end above the bottom edge. Before the fix the height was
     // pinned at 560 and the last source sat below it, clipped away entirely.
@@ -121,7 +127,7 @@ describe("traffic flow fits inside its own chart", () => {
     const win = open();
     await settle();
     const svg = card(win, "Traffic flow").querySelector("svg")!;
-    const [, , w] = viewBox(svg as unknown as SVGSVGElement);
+    const { w } = viewBox(svg as unknown as SVGSVGElement);
 
     // What's DRAWN is the text minus its <title> child (that one is the tooltip).
     const drawn = [...svg.querySelectorAll("text")].map((t) =>
@@ -153,12 +159,12 @@ describe("traffic flow fits inside its own chart", () => {
       }),
     );
     await settle();
-    const flat = viewBox(card(even, "Traffic flow").querySelector("svg") as unknown as SVGSVGElement)[3];
+    const flat = viewBox(card(even, "Traffic flow").querySelector("svg") as unknown as SVGSVGElement).h;
     even.close();
 
     const win = open();
     await settle();
-    const skewed = viewBox(card(win, "Traffic flow").querySelector("svg") as unknown as SVGSVGElement)[3];
+    const skewed = viewBox(card(win, "Traffic flow").querySelector("svg") as unknown as SVGSVGElement).h;
 
     expect(flat).toBeLessThanOrEqual(572); // 560 band + bottom margin, as before
     expect(skewed).toBeGreaterThan(flat); // the tail of small sources earned its room
@@ -190,9 +196,9 @@ describe("chart values without a pointer (touch)", () => {
     const cols = [...c.querySelectorAll("rect.col")];
     expect(cols.length).toBe(24);
 
-    (cols[9] as unknown as HTMLElement).dispatchEvent(new win.MouseEvent("click", { bubbles: true }));
+    col(cols, 9).dispatchEvent(new win.MouseEvent("click", { bubbles: true }));
     expect(c.querySelector(".readout")!.textContent).toBe("09:00 UTC — 120 views");
-    expect(cols[9].getAttribute("class")).toContain("sel"); // the cursor stays put after the finger lifts
+    expect(col(cols, 9).getAttribute("class")).toContain("sel"); // the cursor stays put after the finger lifts
   });
 
   it("a quiet hour is as tappable as a busy one — the hit area is the whole column", async () => {
@@ -203,8 +209,8 @@ describe("chart values without a pointer (touch)", () => {
 
     // Hour 1 recorded nothing: its drawn bar has zero height, so only a full-height
     // hit area makes it reachable at all.
-    expect(Number(cols[1].getAttribute("height"))).toBeGreaterThan(100);
-    (cols[1] as unknown as HTMLElement).dispatchEvent(new win.MouseEvent("click", { bubbles: true }));
+    expect(Number(col(cols, 1).getAttribute("height"))).toBeGreaterThan(100);
+    col(cols, 1).dispatchEvent(new win.MouseEvent("click", { bubbles: true }));
     expect(c.querySelector(".readout")!.textContent).toBe("01:00 UTC — 0 views");
   });
 
@@ -213,10 +219,10 @@ describe("chart values without a pointer (touch)", () => {
     await settle();
     const c = card(win, "Views by hour");
     const cols = [...c.querySelectorAll("rect.col")];
-    (cols[3] as unknown as HTMLElement).dispatchEvent(new win.MouseEvent("click", { bubbles: true }));
-    (cols[14] as unknown as HTMLElement).dispatchEvent(new win.MouseEvent("click", { bubbles: true }));
+    col(cols, 3).dispatchEvent(new win.MouseEvent("click", { bubbles: true }));
+    col(cols, 14).dispatchEvent(new win.MouseEvent("click", { bubbles: true }));
     expect(c.querySelectorAll("rect.col.sel").length).toBe(1);
-    expect(cols[14].getAttribute("class")).toContain("sel");
+    expect(col(cols, 14).getAttribute("class")).toContain("sel");
   });
 
   it("'Right now' works the same way, and shows what its tallest bar is worth", async () => {
@@ -228,7 +234,7 @@ describe("chart values without a pointer (touch)", () => {
 
     const cols = [...c.querySelectorAll("rect.col")];
     expect(cols.length).toBe(30);
-    (cols[12] as unknown as HTMLElement).dispatchEvent(new win.MouseEvent("click", { bubbles: true }));
+    col(cols, 12).dispatchEvent(new win.MouseEvent("click", { bubbles: true }));
     expect(c.querySelector(".readout")!.textContent).toBe("14:12 UTC — 40 views");
   });
 
@@ -237,7 +243,7 @@ describe("chart values without a pointer (touch)", () => {
     await settle();
     const c = card(win, "Views by hour");
     const cols = [...c.querySelectorAll("rect.col")];
-    (cols[14] as unknown as HTMLElement).dispatchEvent(new win.MouseEvent("mouseover", { bubbles: true }));
+    col(cols, 14).dispatchEvent(new win.MouseEvent("mouseover", { bubbles: true }));
     expect(c.querySelector(".readout")!.textContent).toBe("14:00 UTC — 300 views");
   });
 
