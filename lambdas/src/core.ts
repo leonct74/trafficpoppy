@@ -173,6 +173,9 @@ export function normalizePath(path: unknown): string | undefined {
 export function normalize(raw: RawEvent, ctx: RequestContext, ownHost?: string): NormalizedEvent | null {
   // Honor the opt-out signal above everything else: count nothing, not even anonymously.
   if (ctx.doNotTrack) return null;
+  // Robots are not visitors. Above the goal branch on purpose: a crawler that clicks a
+  // download link was inflating CONVERSIONS, which is the number owners act on.
+  if (isAutomated(ctx.userAgent)) return null;
 
   const siteId = clean(raw.s, MAX_SITE_ID);
   const path = normalizePath(raw.p);
@@ -220,6 +223,59 @@ export function normalize(raw: RawEvent, ctx: RequestContext, ownHost?: string):
 export function isDoNotTrack(headers: Record<string, string | undefined>): boolean {
   const h = (name: string) => headers[name] ?? headers[name.toLowerCase()];
   return h("Sec-GPC") === "1" || h("DNT") === "1";
+}
+
+/**
+ * Automated clients, which must not be counted as people (founder 2026-08-09: a download
+ * button reported 31 conversions the same week the destination store saw almost nothing).
+ *
+ * A scanner that runs JavaScript looks EXACTLY like a visitor to us — it loads the page and
+ * it clicks links — so the only signal available is the User-Agent. That makes this a
+ * heuristic, and the rule for a heuristic that silently deletes someone's data is: prefer
+ * missing a bot to inventing one. Everything here is either a name that exists only on
+ * automation, or a shape no human browser produces.
+ *
+ * The trap this deliberately avoids: matching a bare "bot" substring. Real phones ship
+ * user-agents like "Android 10; CUBOT NOTE 20" — a naive /bot/ would quietly erase every
+ * Cubot owner from the owner's statistics, and they would never know why. So the generic
+ * catch-all requires the `name-bot/version` SHAPE, which device names don't have.
+ */
+const AUTOMATION = [
+  // Search, SEO and AI crawlers — named, because their name is unambiguous.
+  /\b(googlebot|bingbot|yandex(bot)?|duckduckbot|baiduspider|applebot|petalbot)\b/i,
+  /\b(gptbot|claudebot|claude-web|anthropic-ai|ccbot|perplexitybot|bytespider|amazonbot|oai-searchbot)\b/i,
+  /\b(ahrefsbot|semrushbot|mj12bot|dotbot|dataforseo|screaming\s?frog|serpstat|blexbot)\b/i,
+  // Generic crawler vocabulary. These words appear in no browser's user-agent.
+  /(crawler|crawling|spider|slurp|feedfetcher|mediapartners|scrapy)/i,
+  // Link-preview fetchers. NOTE: the in-app browsers of the same products (WhatsApp,
+  // Instagram, Facebook) are REAL PEOPLE and are deliberately not listed — only the
+  // server-side unfurlers, whose names are distinct.
+  /\b(facebookexternalhit|twitterbot|slackbot|discordbot|telegrambot|linkedinbot|redditbot|embedly|skypeuripreview|whatsapp\/[\d.]+ [ai])\b/i,
+  // Headless browsers and test drivers — these DO execute JS and DO fire click handlers,
+  // which is precisely why they were inflating conversions.
+  /(headlesschrome|phantomjs|puppeteer|playwright|selenium|webdriver|cypress)/i,
+  // Performance, uptime and availability monitors.
+  /(lighthouse|pagespeed|gtmetrix|pingdom|uptimerobot|statuscake|site24x7|newrelicpinger|betteruptime)/i,
+  // Plain HTTP clients: a library, not a browser.
+  /^(curl|wget|libwww-perl|python-requests|python-urllib|go-http-client|java|okhttp|apache-httpclient|guzzlehttp|aiohttp|node-fetch|axios|got|postmanruntime|insomnia|httpie|restsharp)[/\s]/i,
+  // Security and infrastructure scanners.
+  /(nmap|masscan|zgrab|nuclei|sqlmap|wpscan|censys|shodan|expanse|internet-?measurement)/i,
+  // The catch-all for bots we've never heard of: "SomeNewBot/1.0". The trailing version is
+  // what separates a crawler's self-identification from a phone model called CUBOT.
+  /[a-z0-9._-]*bot\/[\d.]/i,
+] as const;
+
+/**
+ * True when the user-agent identifies an automated client rather than a person.
+ *
+ * An ABSENT user-agent is NOT treated as automation. It is suspicious, but a header can go
+ * missing for reasons that aren't the visitor's fault, and dropping those visits would make
+ * the owner's numbers quietly wrong in the one direction they can't detect.
+ */
+export function isAutomated(ua: unknown): boolean {
+  const s = typeof ua === "string" ? ua : "";
+  if (!s) return false;
+  return AUTOMATION.some((re) => re.test(s));
 }
 
 /** One counter row to increment: (pk, sk) get `ADD count :1` (+ TTL when it should age out). */

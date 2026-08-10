@@ -1254,3 +1254,25 @@ materializes.
   fresh copy on each range change — after three renders one CSV click downloaded three files.
   Bound once now. Tests drive the real page in jsdom (`viewer-charts.test.ts`) and were
   checked against the OLD code first to prove they catch the bug.
+- 2026-08-09 — **Robots are not visitors** (founder, from live data: a Windows download
+  button reported 31 conversions from 23 "visitors" in a week when the destination store
+  reported almost nothing). Nothing in the pipeline had EVER rejected an automated client —
+  the user-agent was read only to derive a browser and OS label. That is fine for a crawler
+  that just fetches HTML, but a headless scanner runs our script, and `t.js` reports a goal
+  on any click inside `[data-tp-goal]`, so a link-checker walking the download page counted
+  as a person converting. Conversions are the number an owner ACTS on, so this was the worst
+  place to be silently wrong. `isAutomated(ua)` now drops automation in `normalize()`, above
+  the goal branch, alongside the GPC/DNT opt-out — count nothing, not even anonymously.
+  **The heuristic's rule is: prefer missing a bot to inventing one**, because a false
+  positive erases a real visit and the owner cannot detect it. Hence two deliberate
+  decisions: (1) an ABSENT user-agent is still counted — suspicious, but a missing header is
+  not the visitor's fault; (2) the generic catch-all requires the `name-bot/version` SHAPE,
+  never a bare "bot" substring, because real phones ship user-agents like "CUBOT NOTE 20"
+  and a naive match would have quietly deleted every Cubot owner from every site's
+  statistics. In-app browsers (WhatsApp, Instagram, Facebook) are people and are explicitly
+  NOT filtered; only the server-side link unfurlers, whose names are distinct, are. The test
+  file is half bots-caught and half humans-spared, because the second half is the property
+  that can do damage.
+  Sizing note for the founder's original question: our conversions count CLICKS while
+  Microsoft's page views count UNIQUE DEVICES, so the two can never be compared directly
+  even once bots are gone.
