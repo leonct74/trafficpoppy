@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import { createBackup, keepRow, listBackups, mergeGoals, mergeSites, restoreBackup } from "./backup";
+import { backupDirFor, createBackup, keepRow, listBackups, mergeGoals, mergeSites, restoreBackup, restoreBackupContent } from "./backup";
 import type { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 
 const row = (pk: string, sk: string, extra: Record<string, unknown> = {}) =>
@@ -386,5 +386,29 @@ describe("conversion goals survive backup, restore and merge", () => {
     const db = { send: vi.fn().mockResolvedValue({ Items: [] }) } as unknown as DynamoDBClient;
     const r = await restoreBackup(db, "T", path);
     expect(r).toMatchObject({ restored: 2, goals: 2, mergedSites: [], conflicts: [] });
+  });
+});
+
+// 0.2.4 (confinement): backups live in the host's data folder; content-restore covers
+// files the backend can no longer read (pre-0.2.4 in ~/Documents, other machines).
+describe("backupDirFor + restoreBackupContent", () => {
+  it("uses <dataDir>/backups when the host sent one, ~/Documents only as the old-host fallback", () => {
+    expect(backupDirFor("/data/com.trafficpoppy.desktop")).toBe(join("/data/com.trafficpoppy.desktop", "backups"));
+    expect(backupDirFor(undefined).endsWith("/Documents")).toBe(true);
+  });
+
+  it("createBackup creates the backups folder — it does not exist until the first backup", async () => {
+    const db = { send: vi.fn().mockResolvedValue({ Items: [] }) } as unknown as DynamoDBClient;
+    const dir = join(mkdtempSync(join(tmpdir(), "tp-")), "backups"); // deliberately missing
+    const out = await createBackup(db, "T", [], { dir, now: new Date("2026-08-20T00:00:00Z") });
+    expect(await readFile(out.path, "utf8")).toContain('"version":1');
+  });
+
+  it("restoreBackupContent refuses non-JSON and wrong shapes with the same calm sentence", async () => {
+    const db = { send: vi.fn() } as unknown as DynamoDBClient;
+    await expect(restoreBackupContent(db, "T", "not json")).rejects.toThrow(/not a readable TrafficPoppy backup/);
+    await expect(restoreBackupContent(db, "T", '{"version":2,"rows":[]}')).rejects.toThrow(/not a readable/);
+    await expect(restoreBackupContent(db, "T", '{"version":1}')).rejects.toThrow(/not a readable/);
+    expect((db.send as ReturnType<typeof vi.fn>).mock.calls.length).toBe(0); // nothing written on refusal
   });
 });

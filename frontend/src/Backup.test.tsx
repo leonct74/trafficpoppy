@@ -1,11 +1,14 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Backup } from "./Backup";
 import { api } from "./api";
 
 vi.mock("./api", () => ({
-  api: { backup: vi.fn(), listBackups: vi.fn(), restore: vi.fn(), listSites: vi.fn() },
+  api: {
+    backup: vi.fn(), listBackups: vi.fn(), restore: vi.fn(), listSites: vi.fn(),
+    restoreContent: vi.fn(), backupDownload: vi.fn(),
+  },
 }));
 
 // Each site asks the host whether it's subscribed — default to "no" so the tests below
@@ -19,6 +22,7 @@ vi.mock("./host", async () => {
       purchaseInfo: vi.fn().mockResolvedValue({ price: null, owned: false }),
       buyProduct: vi.fn(),
       manageSubscription: vi.fn(),
+      openExternal: vi.fn().mockResolvedValue(undefined),
     },
   };
 });
@@ -27,6 +31,8 @@ const mocked = api as unknown as {
   backup: ReturnType<typeof vi.fn>;
   listBackups: ReturnType<typeof vi.fn>;
   restore: ReturnType<typeof vi.fn>;
+  restoreContent: ReturnType<typeof vi.fn>;
+  backupDownload: ReturnType<typeof vi.fn>;
   listSites: ReturnType<typeof vi.fn>;
 };
 
@@ -159,6 +165,52 @@ describe("Back up & restore", () => {
       expect(mocked.restore).toHaveBeenCalledWith("/x/TrafficPoppy-backup-2026-08-05.json"),
     );
     expect(await screen.findByText(/have their history back/i)).toBeInTheDocument();
+  });
+
+  it("Restore from a file: the FRONTEND reads the picked file, confirms, then sends its CONTENT", async () => {
+    mocked.restoreContent.mockResolvedValue({ restored: 7, goals: 0, mergedSites: [], conflicts: [] });
+    render(<Backup onlineDomains={ONLINE} paidDomains={[]} />);
+
+    // The real input is hidden behind the "Choose a backup file…" button, so drive the
+    // change event directly (userEvent refuses hidden elements — the button is the UX).
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+    const file = new File(['{"version":1,"rows":[]}'], "TrafficPoppy-backup-2026-08-01.json", { type: "application/json" });
+    fireEvent.change(input, { target: { files: [file] } });
+
+    // Two-step: picking only proposes; nothing is sent yet.
+    expect(await screen.findByText("TrafficPoppy-backup-2026-08-01.json")).toBeInTheDocument();
+    expect(mocked.restoreContent).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole("button", { name: /really restore/i }));
+    await waitFor(() => expect(mocked.restoreContent).toHaveBeenCalledWith('{"version":1,"rows":[]}'));
+    expect(await screen.findByText(/have their history back/i)).toBeInTheDocument();
+  });
+
+  it("names where a pre-0.2.4 backup lives (Documents) next to the picker", async () => {
+    render(<Backup onlineDomains={ONLINE} paidDomains={[]} />);
+    expect(await screen.findByText(/Documents folder/i)).toBeInTheDocument();
+  });
+
+  it("Download stages the file and opens it in the system browser via the host", async () => {
+    mocked.listBackups.mockResolvedValue({
+      backups: [{ path: "/data/backups/TrafficPoppy-backup-2026-08-05.json", date: "2026-08-05", bytes: 2048 }],
+    });
+    mocked.backupDownload.mockResolvedValue({ token: "tok-1", filename: "TrafficPoppy-backup-2026-08-05.json" });
+    const { host } = await import("./host");
+    render(<Backup onlineDomains={ONLINE} paidDomains={[]} />);
+
+    await userEvent.click(await screen.findByRole("button", { name: /^download$/i }));
+    await waitFor(() =>
+      expect(mocked.backupDownload).toHaveBeenCalledWith("/data/backups/TrafficPoppy-backup-2026-08-05.json"),
+    );
+    // jsdom serves the page from localhost (no /ext-ui prefix), so the component must
+    // surface the failure rather than silently doing nothing... unless openExternal ran.
+    // Either the host opened a URL or the manual banner appeared — never silence.
+    await waitFor(() => {
+      const opened = (host.openExternal as ReturnType<typeof vi.fn>).mock.calls.length > 0;
+      const bannered = screen.queryByText(/couldn't open your browser/i) !== null;
+      const errored = screen.queryByText(/no way to hand you the file/i) !== null;
+      expect(opened || bannered || errored).toBe(true);
+    });
   });
 
   /**

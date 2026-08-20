@@ -1,5 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "./api";
+import { downloadUrlFor } from "./download";
+import { host } from "./host";
 import { Button } from "./Button";
 import { CopyButton } from "./CopyButton";
 import { isFirstPartyFor } from "../../shared/src/first-party";
@@ -34,7 +36,32 @@ export function Backup(props: {
     conflicts: string[];
   } | null>(null);
   const [confirming, setConfirming] = useState<string | null>(null);
+  // A picked file waiting for its "Really restore" click: {name, content}.
+  const [pendingFile, setPendingFile] = useState<{ name: string; content: string } | null>(null);
+  // The download address to paste when the host couldn't open the browser itself.
+  const [manualUrl, setManualUrl] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  // 🪤 NOT a blob + `<a download>`: this frame is sandboxed in a webview where that
+  // silently does nothing (CrewPoppy, 2026-08-01). The backend stages the file under a
+  // one-shot token and the SYSTEM BROWSER fetches it through the host (download.ts).
+  const download = async (path: string) => {
+    setErr(null);
+    setManualUrl(null);
+    try {
+      const { token } = await api.backupDownload(path);
+      const url = downloadUrlFor(token, window.location.href);
+      if (!url) throw new Error("This page isn't being served by AgentsPoppy, so there is no way to hand you the file.");
+      try {
+        await host.openExternal(url);
+      } catch {
+        setManualUrl(url); // same token, still good for a minute
+      }
+    } catch (e) {
+      setErr((e as Error).message);
+    }
+  };
 
   const refresh = async () => {
     try {
@@ -246,9 +273,15 @@ export function Backup(props: {
                   </button>
                 </span>
               ) : (
-                <button className="btn btn-sm" onClick={() => setConfirming(b.path)}>
-                  Restore
-                </button>
+                <span className="row" style={{ gap: 6 }}>
+                  <button className="btn btn-sm" onClick={() => void download(b.path)}
+                    title="Hands the file to your browser, which saves it — keep a copy off this machine before a removal">
+                    Download
+                  </button>
+                  <button className="btn btn-sm" onClick={() => setConfirming(b.path)}>
+                    Restore
+                  </button>
+                </span>
               )}
             </div>
           ))}
@@ -258,6 +291,83 @@ export function Backup(props: {
           </p>
         </div>
       )}
+
+      {manualUrl && (
+        <div className="banner info stack" style={{ gap: 6 }}>
+          <div>
+            AgentsPoppy couldn't open your browser. Paste this address into any browser within a
+            minute to get the file:
+          </div>
+          <div className="row" style={{ gap: 8 }}>
+            <code className="chip" style={{ flex: 1, overflowX: "auto", whiteSpace: "nowrap" }}>{manualUrl}</code>
+            <CopyButton text={manualUrl} label="Address" />
+          </div>
+        </div>
+      )}
+
+      {/* Restore from a file the OS picker reads — the way a backup made before 0.2.4
+          (in your Documents folder, which TrafficPoppy can no longer read) or carried
+          from another machine comes home. The FRONTEND reads it: sandboxes gate
+          downloads, not pickers. */}
+      <div className="stack" style={{ gap: 6 }}>
+        <div className="section-title" style={{ margin: 0 }}>
+          Restore from a file
+        </div>
+        <p className="muted" style={{ margin: 0, fontSize: 12 }}>
+          For a backup file that isn't in the list above — one made before version 0.2.4 (look in
+          your Documents folder for <code>TrafficPoppy-backup-…​.json</code>) or brought over from
+          another computer.
+        </p>
+        <input
+          ref={fileRef}
+          type="file"
+          accept=".json,application/json"
+          style={{ display: "none" }}
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            e.target.value = ""; // the same file re-picked later must fire again
+            if (!f) return;
+            setErr(null);
+            // FileReader, not f.text(): the older WebKit webviews this frame can run in
+            // (and jsdom in tests) don't all implement Blob.text().
+            const reader = new FileReader();
+            reader.onload = () => setPendingFile({ name: f.name, content: String(reader.result ?? "") });
+            reader.onerror = () => setErr("Couldn't read that file.");
+            reader.readAsText(f);
+          }}
+        />
+        {pendingFile ? (
+          <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+            <span className="mono" style={{ fontSize: 12 }}>{pendingFile.name}</span>
+            <Button
+              className="btn btn-danger btn-sm"
+              busyLabel="Restoring…"
+              onClick={async () => {
+                setErr(null);
+                setSaved(null);
+                try {
+                  setRestored(await api.restoreContent(pendingFile.content));
+                  document.dispatchEvent(new CustomEvent("tp:data-restored"));
+                  setPendingFile(null);
+                } catch (e) {
+                  setErr((e as Error).message);
+                }
+              }}
+            >
+              Really restore
+            </Button>
+            <button className="btn btn-sm" onClick={() => setPendingFile(null)}>
+              Cancel
+            </button>
+          </div>
+        ) : (
+          <div>
+            <button className="btn btn-sm" onClick={() => fileRef.current?.click()}>
+              Choose a backup file…
+            </button>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

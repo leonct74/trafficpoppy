@@ -75,6 +75,13 @@ export const api = {
     host.invokeBackend({ method: "GET", path: "/backups" }),
   restore: (path: string): Promise<{ restored: number; goals: number; mergedSites: string[]; conflicts: string[] }> =>
     host.invokeBackend({ method: "POST", path: "/restore", body: { path } }, 15 * 60_000),
+  /** Restore from a file the FRONTEND read through the OS picker (pre-0.2.4 backups in
+   *  ~/Documents — unreadable to the confined backend — and backups from another machine). */
+  restoreContent: (content: string): Promise<{ restored: number; goals: number; mergedSites: string[]; conflicts: string[] }> =>
+    host.invokeBackend({ method: "POST", path: "/restore", body: { content } }, 15 * 60_000),
+  /** Stage a listed backup file for a one-shot browser download (see download.ts). */
+  backupDownload: (path: string): Promise<{ token: string; filename: string }> =>
+    host.invokeBackend({ method: "POST", path: "/backups/download", body: { path } }),
 
   /** Merge one site's history into another (two records for the same website). */
   mergeSites: (fromId: string, intoId: string): Promise<{ movedRows: number; days: number }> =>

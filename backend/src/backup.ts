@@ -22,7 +22,7 @@
 // The whitelist is deliberate: an unknown future row family drops out of backups until
 // it is classified here, which fails SAFE for privacy.
 
-import { readFile, writeFile, readdir } from "node:fs/promises";
+import { mkdir, readFile, writeFile, readdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, basename } from "node:path";
 import {
@@ -66,8 +66,19 @@ export function backupPath(dir: string, today: string): string {
   return join(dir, `${FILE_PREFIX}${today}.json`);
 }
 
-export function defaultBackupDir(): string {
-  return join(homedir(), "Documents");
+/**
+ * Where backup files live. Since 0.2.4 that is `<dataDir>/backups` inside the host's
+ * private folder for this poppy — the backend is CONFINED (extension.json
+ * `backend.isolation: "strict"`) and may write nothing else outside the OS temp dir.
+ * Pre-0.2.4 backups sat in ~/Documents; the confined backend can no longer read them,
+ * which is fine: "Restore from a file" has the FRONTEND read any backup file through the
+ * OS picker (sandboxes gate downloads, not pickers) and send its CONTENT — that path also
+ * covers restoring on a brand-new machine, which the old list-only flow never did.
+ * The Documents fallback survives only for a host too old to send `dataDir` — which is
+ * also a host too old to confine us, so the write still works there.
+ */
+export function backupDirFor(dataDir: string | undefined): string {
+  return dataDir ? join(dataDir, "backups") : join(homedir(), "Documents");
 }
 
 /** The keep/skip decision — the whole privacy contract of a backup lives here. */
@@ -135,13 +146,15 @@ export async function createBackup(
 
   const now = opts?.now ?? new Date();
   const today = now.toISOString().slice(0, 10);
-  const path = backupPath(opts?.dir ?? defaultBackupDir(), today);
+  const dir = opts?.dir ?? backupDirFor(undefined);
+  await mkdir(dir, { recursive: true }); // <dataDir>/backups does not exist until the first backup
+  const path = backupPath(dir, today);
   const body = { version: 1, exportedAt: now.toISOString(), table: tableName, rows };
   await writeFile(path, JSON.stringify(body), "utf8");
   return { path, rows: rows.length, sites: included.length, counters: counters.length, goals, skippedSites };
 }
 
-export async function listBackups(dir = defaultBackupDir()): Promise<BackupFileInfo[]> {
+export async function listBackups(dir: string): Promise<BackupFileInfo[]> {
   let names: string[];
   try {
     names = await readdir(dir);
@@ -173,8 +186,27 @@ export async function restoreBackup(
   path: string,
 ): Promise<{ restored: number; goals: number; mergedSites: string[]; conflicts: string[] }> {
   // Only files that look like ours — this endpoint must never become a generic file reader.
+  // (Under confinement the runtime additionally refuses any path outside the data dir.)
   if (!FILE_RE.test(basename(path))) throw new Error("Not a TrafficPoppy backup file.");
-  const parsed = JSON.parse(await readFile(path, "utf8")) as { version?: number; rows?: Row[] };
+  return restoreBackupContent(db, tableName, await readFile(path, "utf8"));
+}
+
+/**
+ * Restore from the file's CONTENT — the "Restore from a file" path, where the sandboxed
+ * frontend read the file through the OS picker and the backend never touches a path.
+ * Same validation, same writes, same result shape as a path restore.
+ */
+export async function restoreBackupContent(
+  db: DynamoDBClient,
+  tableName: string,
+  content: string,
+): Promise<{ restored: number; goals: number; mergedSites: string[]; conflicts: string[] }> {
+  let parsed: { version?: number; rows?: Row[] };
+  try {
+    parsed = JSON.parse(content) as { version?: number; rows?: Row[] };
+  } catch {
+    throw new Error("This file is not a readable TrafficPoppy backup.");
+  }
   if (parsed.version !== 1 || !Array.isArray(parsed.rows)) {
     throw new Error("This file is not a readable TrafficPoppy backup.");
   }

@@ -28,9 +28,13 @@ import { CognitoIdentityProviderClient } from "@aws-sdk/client-cognito-identity-
 import { deployEdge, edgeStatusAll, listEdges, removeEdge, updateEdge, type CertStore, type EdgeCtx } from "./edge";
 import { DeleteItemCommand, PutItemCommand, QueryCommand } from "@aws-sdk/client-dynamodb";
 import { SiteRegistry, lastDays } from "./sites";
-import { createBackup, listBackups, mergeSites, restoreBackup } from "./backup";
+import { backupDirFor, createBackup, listBackups, mergeSites, restoreBackup, restoreBackupContent } from "./backup";
+import { contentDisposition, stageDownload, takeDownload } from "./local-download";
+import { basename } from "node:path";
 
 const boot = readBootstrap();
+// Where backup files live — the host's private folder for this poppy (see backup.ts).
+const backupDir = backupDirFor(boot.dataDir);
 const credentials = brokerCredentialsProvider(boot);
 const region = boot.account.region;
 const aws: AwsCtx = {
@@ -387,10 +391,10 @@ const server = createServer(async (req, res) => {
       const deployed = (await listEdges(edge)).map((e) => e.domain);
       const declared = Array.isArray(body?.entitledDomains) ? body!.entitledDomains : [];
       const siteIds = Array.isArray(body?.siteIds) ? body!.siteIds : undefined;
-      return json(res, 200, await createBackup(db, tableName, [...deployed, ...declared], { siteIds }));
+      return json(res, 200, await createBackup(db, tableName, [...deployed, ...declared], { siteIds, dir: backupDir }));
     }
     if (parts[0] === "backups" && parts.length === 1 && method === "GET") {
-      return json(res, 200, { backups: await listBackups() });
+      return json(res, 200, { backups: await listBackups(backupDir) });
     }
     // Merge one site's history into another (same domain, two records — the classic
     // rebuild-then-restore situation). Additive: no counter is overwritten or lost.
@@ -399,9 +403,51 @@ const server = createServer(async (req, res) => {
       return json(res, 200, await mergeSites(db, tableName, body?.fromId ?? "", body?.intoId ?? ""));
     }
     if (parts[0] === "restore" && parts.length === 1 && method === "POST") {
+      // Two shapes: {path} for a file in OUR backups folder (the on-screen list), or
+      // {content} when the sandboxed frontend read a file through the OS picker — the
+      // way pre-0.2.4 backups in ~/Documents (unreadable to a confined backend) and
+      // backups carried to a new machine come home.
+      const body = (await readBody(req)) as { path?: string; content?: string } | undefined;
+      if (typeof body?.content === "string" && body.content) {
+        return json(res, 200, await restoreBackupContent(db, tableName, body.content));
+      }
+      if (!body?.path) return json(res, 400, { error: "Which backup file? path or content is required." });
+      try {
+        return json(res, 200, await restoreBackup(db, tableName, body.path));
+      } catch (e) {
+        // Confined, a path outside our own backups folder is denied by the RUNTIME —
+        // translate that into the instruction that works instead of the raw permission error.
+        if ((e as NodeJS.ErrnoException).code === "ERR_ACCESS_DENIED") {
+          return json(res, 400, { error: "TrafficPoppy can only open files in its own backups folder. For a file anywhere else, use “Restore from a file” and pick it." });
+        }
+        throw e;
+      }
+    }
+    // Hand a backup file to the user as a real download: stage it under a one-shot token;
+    // the frontend has the host open /ext-dl/<id>/local-download/<token> in the system
+    // browser (local-download.ts). How the numbers leave the machine before a teardown.
+    if (parts[0] === "backups" && parts[1] === "download" && parts.length === 2 && method === "POST") {
       const body = (await readBody(req)) as { path?: string } | undefined;
-      if (!body?.path) return json(res, 400, { error: "Which backup file? path is required." });
-      return json(res, 200, await restoreBackup(db, tableName, body.path));
+      const path = body?.path ?? "";
+      // List-only: the file must be one of ours, in our folder.
+      const known = (await listBackups(backupDir)).find((b) => b.path === path);
+      if (!known) return json(res, 404, { error: "That backup isn't in TrafficPoppy's folder any more — refresh the list." });
+      const { readFile } = await import("node:fs/promises");
+      const bytes = Buffer.from(await readFile(path, "utf8"), "utf8");
+      return json(res, 200, stageDownload({ filename: basename(path), contentType: "application/json; charset=utf-8", bytes }));
+    }
+    if (method === "GET" && parts[0] === "local-download" && parts.length === 2) {
+      const file = takeDownload(decodeURIComponent(parts[1]!));
+      if (!file) {
+        res.statusCode = 404;
+        res.setHeader("content-type", "text/plain; charset=utf-8");
+        return res.end("This download link has expired or was already used. Go back to TrafficPoppy and ask again.");
+      }
+      res.statusCode = 200;
+      res.setHeader("content-type", file.contentType);
+      res.setHeader("content-disposition", contentDisposition(file.filename));
+      res.setHeader("content-length", String(file.bytes.length));
+      return res.end(file.bytes);
     }
 
     // True Reach (P5, multi-domain since 2026-08-04): sidecar-requested certificates +

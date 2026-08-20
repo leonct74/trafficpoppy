@@ -701,6 +701,22 @@ materializes.
 
 ## 14. Status
 
+- 2026-08-20 — **0.2.4 BUILT — the backend is CONFINED (`backend.isolation: "strict"`,
+  step 9 of `agentspoppy/docs/CONFINEMENT-MIGRATION.md`).** Backups move to
+  `<dataDir>/backups` (backup.ts::backupDirFor; ~/Documents only as the old-host fallback);
+  restore gains a `{content}` shape fed by a frontend file PICKER — which is what makes this
+  a ONE-release migration (pre-0.2.4 backups in ~/Documents and backups from another machine
+  restore through the picker; sandboxes gate downloads, not pickers) — and every listed
+  backup gets a Download button via the host's one-shot `/ext-dl` handoff (local-download.ts
+  + download.ts, the CrewPoppy/VM-Poppy modules). Closed en route: the old restore would
+  read ANY absolute path whose basename matched (confinement + the calm ERR_ACCESS_DENIED
+  translation close it), and the silent-empty-list failure (a denied dir now simply lists
+  the data dir's own folder, which is always readable). Proven on the shipped bundle under
+  the exact host confinement flags: boots; `/backups` → `200 []` on a missing folder;
+  garbage content → the calm refusal; a ~/Documents path → 400 naming the picker; unknown
+  download → 404; token route 404s. 116 backend + 157 frontend tests. **Listing must carry
+  `minHost: "0.3.1"`.** Founder functional pass in the container: back up → see it listed →
+  Download saves via the browser → restore; and an old Documents file through the picker.
 - 2026-07-17 — **Planning COMPLETE.** DESIGN.md drafted; §10 open questions answered by the
   founder (locked in §11); monetization decided (§12: free core + "True Reach" custom-domain
   subscription via AgentsPoppy checkout); phased plan in §13. Roadmap entry #8 in
@@ -1082,7 +1098,11 @@ materializes.
 - 2026-08-05 — **Back up & restore shipped (the §12 "teardown export", built for the
   certify run — founder: "I would love to save the current captured statistics").**
   Sidecar `POST /backup` scans the table and writes one deterministic JSON per day to
-  ~/Documents (frontends can't download — platform rule); `GET /backups` lists;
+  the host's data folder for this poppy (`<dataDir>/backups` since 0.2.4 — the backend is
+  CONFINED and may write nothing else; before 0.2.4 it was ~/Documents, which the confined
+  backend can no longer read: the "Restore from a file" picker covers those, and the
+  per-file Download button hands a copy to the system browser via the host's one-shot
+  `/ext-dl` passthrough); `GET /backups` lists;
   `POST /restore` puts rows back (idempotent, file's version wins on key collision,
   two-step confirmed in the UI; only filenames matching ours are readable — never a
   generic file reader). THE WHITELIST IS THE PRIVACY CONTRACT and is re-applied on
