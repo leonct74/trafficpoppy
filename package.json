@@ -1,6 +1,6 @@
 {
   "name": "traffic-poppy",
-  "version": "0.1.0",
+  "version": "0.2.5",
   "private": true,
   "description": "Privacy-first web analytics that run entirely in your own AWS \u2014 an AgentsPoppy extension.",
   "type": "module",
