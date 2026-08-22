@@ -4,6 +4,7 @@ import { Backup } from "./Backup";
 import { Button } from "./Button";
 import { Conversions } from "./Conversions";
 import { Dashboard } from "./Dashboard";
+import { ExternalLink } from "./ExternalLink";
 import { Feedback } from "./Feedback";
 import { PaidProbe } from "./entitlement";
 import { Integrate } from "./Integrate";
@@ -510,6 +511,16 @@ export function App() {
           </dl>
         </div>
       )}
+
+      {/* Founder rule (2026-08-22), for every first-party poppy: the app is a tool acting in
+          the user's own accounts, provided as-is — its records are theirs to review, and
+          malfunctions or wrong use are not something Olly Digital answers for. */}
+      <p className="muted" style={{ fontSize: 11.5, marginTop: 12 }}>
+        TrafficPoppy runs in your own AWS account and is provided &ldquo;as is&rdquo; under the{" "}
+        <ExternalLink href="https://agentspoppy.com/terms">AgentsPoppy Terms</ExternalLink>. Its
+        statistics are working records for you to review — what you decide on those views,
+        visitors and conversions stays with you.
+      </p>
     </div>
   );
 }
