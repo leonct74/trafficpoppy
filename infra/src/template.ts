@@ -57,6 +57,18 @@ export interface CfnTemplate {
 }
 
 /**
+ * The permissions-boundary property EVERY role below carries (AgentsPoppy broker-role-v2
+ * step 2). One shared value, so a role added later can't quietly go uncapped.
+ *
+ * The boundary CAPS what a role may ever do; it grants nothing, so both roles' own
+ * least-privilege policies — and therefore both Lambdas' runtime permissions — are
+ * identical whether or not it's applied.
+ */
+const PERMISSIONS_BOUNDARY = {
+  "Fn::If": ["HasPermissionsBoundary", { Ref: "PermissionsBoundaryArn" }, { Ref: "AWS::NoValue" }],
+};
+
+/**
  * Build the template. Pure — same input, same bytes — so the content-addressed hash the
  * build script derives from it is stable across machines.
  *
@@ -88,6 +100,21 @@ export function buildTemplate(): CfnTemplate {
       // UserPoolTags explicitly guarantees the CreateUserPool call itself carries them.
       AttrAccountId: { Type: "String", Description: "agentspoppy:account tag value." },
       AttrConnectionId: { Type: "String", Description: "agentspoppy:connection tag value." },
+      // The host passes AgentsPoppy's account-wide boundary policy here, but ONLY once it
+      // has confirmed that policy exists. Empty (the default) must therefore stay a valid
+      // deploy: a CreateRole naming a boundary that isn't in the account yet is refused by
+      // IAM, so an account on an older AgentsPoppy setup would otherwise be unable to
+      // deploy at all. Same reason the sidecar never STRIPS a boundary it can't see —
+      // see stack.ts::deploy.
+      PermissionsBoundaryArn: {
+        Type: "String",
+        Default: "",
+        Description:
+          "ARN of a managed policy to attach as the permissions boundary on every IAM role this stack creates (AgentsPoppy's AgentsPoppyBoundary). Empty = no boundary.",
+      },
+    },
+    Conditions: {
+      HasPermissionsBoundary: { "Fn::Not": [{ "Fn::Equals": [{ Ref: "PermissionsBoundaryArn" }, ""] }] },
     },
     Resources: {
       TrafficTable: {
@@ -121,6 +148,7 @@ export function buildTemplate(): CfnTemplate {
         Type: "AWS::IAM::Role",
         Properties: {
           RoleName: ROLE_NAME,
+          PermissionsBoundary: PERMISSIONS_BOUNDARY,
           AssumeRolePolicyDocument: {
             Version: "2012-10-17",
             Statement: [
@@ -289,6 +317,7 @@ export function buildTemplate(): CfnTemplate {
         Type: "AWS::IAM::Role",
         Properties: {
           RoleName: VIEWER_ROLE_NAME,
+          PermissionsBoundary: PERMISSIONS_BOUNDARY,
           AssumeRolePolicyDocument: {
             Version: "2012-10-17",
             Statement: [

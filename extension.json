@@ -76,6 +76,8 @@
           "PutRolePolicy",
           "DeleteRolePolicy",
           "GetRolePolicy",
+          "PutRolePermissionsBoundary",
+          "DeleteRolePermissionsBoundary",
           "TagRole",
           "ListRoleTags"
         ],

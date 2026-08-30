@@ -193,6 +193,40 @@ function failureMessage(status: string | undefined): string {
   return "Something went wrong in your AWS account during the last change. You can try again, or remove TrafficPoppy and start fresh.";
 }
 
+/**
+ * Which permissions-boundary ARN a deploy names, given what the HOST confirmed and what the
+ * deployed stack already carries (broker-role-v2 step 2). Pure and exported because this is
+ * the security-critical half of the change and none of it needs AWS.
+ *
+ * Precedence, fail-safe in every direction:
+ *  - The host's ARN wins. It is sent only once AgentsPoppy has SEEN the policy in this
+ *    account, so it is the one value we know is safe to name in a CreateRole.
+ *  - A stack about to be deleted and recreated (ROLLBACK_COMPLETE / REVIEW_IN_PROGRESS)
+ *    carries NOTHING forward. It has no live roles left to protect, so preserving buys no
+ *    safety — and if that unconfirmed ARN is *why* the create rolled back (the policy isn't
+ *    in the account), naming it again fails the retry identically: one bad deploy becomes a
+ *    self-perpetuating outage.
+ *  - Otherwise PRESERVE what the live stack already carries. An absent host ARN means "the
+ *    host can't confirm one" — an older host, a transient setup-status read — and must never
+ *    STRIP a boundary off roles that are already capped.
+ *  - Otherwise empty: unbounded, which is a valid deploy (IAM refuses a CreateRole naming a
+ *    policy the account doesn't have, so pre-boundary setups must keep working).
+ *
+ * There is deliberately no "couldn't read the stack" branch here: that read happens in
+ * `describe`, which returns null ONLY for a positive "does not exist" and rethrows anything
+ * else, aborting the deploy. "No stack" and "no answer" must never collapse to the same "",
+ * or a throttle would hand CloudFormation an empty parameter that silently uncaps every role.
+ */
+export function boundaryParameterValue(input: {
+  confirmed?: string;
+  status?: string;
+  deployed?: string;
+}): string {
+  if (input.confirmed) return input.confirmed;
+  if (input.status === "ROLLBACK_COMPLETE" || input.status === "REVIEW_IN_PROGRESS") return "";
+  return input.deployed || "";
+}
+
 export interface DeployResult {
   operation: StackOperation;
   stackName: string;
@@ -205,8 +239,15 @@ export interface DeployResult {
  *
  * Before deploying we ensure the per-account deploy bucket exists and upload the collector's
  * code zip to it (content-addressed key), then point the stack at it via parameters.
+ *
+ * `permissionsBoundaryArn` is AgentsPoppy's boundary policy (boot.ts) when the host has
+ * confirmed it exists — see the precedence below.
  */
-export async function deploy(ctx: AwsCtx, attribution: AttributionContext): Promise<DeployResult> {
+export async function deploy(
+  ctx: AwsCtx,
+  attribution: AttributionContext,
+  permissionsBoundaryArn?: string,
+): Promise<DeployResult> {
   const { cfn, s3, region, accountId } = ctx;
   // The stack MUST carry attribution or AgentsPoppy can neither show nor tear down what
   // we made — so refuse rather than deploy an untrackable footprint.
@@ -225,9 +266,24 @@ export async function deploy(ctx: AwsCtx, attribution: AttributionContext): Prom
   await ensureDeployBucket(s3, bucket, region, attrTags);
   await uploadLambdaCode(s3, bucket, lambdaCodeKey, lambdaZipBase64);
 
+  // One DescribeStacks serves both the boundary fallback and the branch decision below.
+  // A read FAILURE deliberately throws out of here and aborts the whole deploy: see
+  // boundaryParameterValue on why "no stack" and "no answer" must not look alike.
+  const existing = await describe(cfn, stackName);
+  const status = existing?.StackStatus;
+
+  // The permissions boundary capping every role the stack creates. Passed EXPLICITLY every
+  // time — UsePreviousValue fails on the first update after a template gains a parameter.
+  const boundaryArn = boundaryParameterValue({
+    confirmed: permissionsBoundaryArn,
+    status,
+    deployed: existing?.Parameters?.find((p) => p.ParameterKey === "PermissionsBoundaryArn")?.ParameterValue,
+  });
+
   const Parameters = [
     { ParameterKey: "LambdaCodeBucket", ParameterValue: bucket },
     { ParameterKey: "LambdaCodeKey", ParameterValue: lambdaCodeKey },
+    { ParameterKey: "PermissionsBoundaryArn", ParameterValue: boundaryArn },
     // The viewer pool is born tagged from these rather than relying on stack-tag propagation
     // (which P5 proved is not universal — CFN's ACM handler dropped tags on create). A pool's
     // ARN carries a random id, so its grant can only be tag-scoped: these are load-bearing.
@@ -241,9 +297,6 @@ export async function deploy(ctx: AwsCtx, attribution: AttributionContext): Prom
     Capabilities: CAPABILITIES,
     Tags,
   };
-
-  const existing = await describe(cfn, stackName);
-  const status = existing?.StackStatus;
 
   // A previous failed create leaves ROLLBACK_COMPLETE: it can't be updated, and creating
   // over it fails until it's fully gone. Delete, wait, recreate.

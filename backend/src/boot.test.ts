@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { brokerCredentialsProvider, type BackendBootstrap } from "./boot";
+import { brokerCredentialsProvider, readBootstrap, type BackendBootstrap } from "./boot";
 
 const boot: BackendBootstrap = {
   connectionId: "conn-1",
@@ -97,5 +97,56 @@ describe("brokerCredentialsProvider", () => {
     const c = await provider();
     expect(c.accessKeyId).toBe("ASIAEXAMPLE");
     expect(i).toBe(3);
+  });
+});
+
+describe("readBootstrap — the permissions boundary the host confirmed", () => {
+  const withEnv = (v: unknown) => {
+    process.env.AGENTSPOPPY_BOOTSTRAP = JSON.stringify({ ...boot, permissionsBoundaryArn: v });
+    return readBootstrap();
+  };
+
+  it("takes a non-empty ARN through", () => {
+    expect(withEnv("arn:aws:iam::111122223333:policy/AgentsPoppyBoundary").permissionsBoundaryArn).toBe(
+      "arn:aws:iam::111122223333:policy/AgentsPoppyBoundary",
+    );
+  });
+
+  it("accepts the other AWS partitions, and trims", () => {
+    expect(withEnv("  arn:aws:iam::111122223333:policy/AgentsPoppyBoundary  ").permissionsBoundaryArn).toBe(
+      "arn:aws:iam::111122223333:policy/AgentsPoppyBoundary",
+    );
+    expect(withEnv("arn:aws-cn:iam::111122223333:policy/AgentsPoppyBoundary").permissionsBoundaryArn).toBe(
+      "arn:aws-cn:iam::111122223333:policy/AgentsPoppyBoundary",
+    );
+    expect(withEnv("arn:aws-us-gov:iam::111122223333:policy/path/Boundary").permissionsBoundaryArn).toBe(
+      "arn:aws-us-gov:iam::111122223333:policy/path/Boundary",
+    );
+  });
+
+  it("reads anything else as unconfirmed, so the deploy keeps what the stack has", () => {
+    // Never a value we'd hand to CloudFormation verbatim: absent, empty and wrong-typed
+    // all mean "the host can't confirm a boundary", not "the boundary is ''".
+    for (const v of ["", null, 0, {}, undefined]) {
+      expect(withEnv(v).permissionsBoundaryArn, JSON.stringify(v)).toBeUndefined();
+    }
+  });
+
+  it("rejects anything that isn't SHAPED like an IAM policy ARN", () => {
+    // Truthy is not enough. A malformed value passed through verbatim makes the template's
+    // HasPermissionsBoundary condition TRUE and then fails every CreateRole in the stack —
+    // a rolled-back deploy where an unbounded one was promised.
+    const junk = [
+      "   ", // whitespace only — truthy, and the bug this closes
+      "AgentsPoppyBoundary", // a bare policy name
+      "arn:aws:iam::111122223333:policy/", // no policy name
+      "arn:aws:iam::11112223:policy/Boundary", // account id too short
+      "arn:aws:s3:::some-bucket", // right prefix, wrong service
+      "arn:aws:iam::111122223333:role/Boundary", // a role, not a policy
+      "notanarn arn:aws:iam::111122223333:policy/Boundary", // leading junk
+    ];
+    for (const v of junk) {
+      expect(withEnv(v).permissionsBoundaryArn, v).toBeUndefined();
+    }
   });
 });

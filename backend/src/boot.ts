@@ -17,6 +17,14 @@ export interface BackendBootstrap {
    * only on a host too old to send it, which is also a host too old to confine us.
    */
   dataDir?: string;
+  /**
+   * AgentsPoppy's account-wide `AgentsPoppyBoundary` managed policy, sent ONLY when the
+   * host has confirmed it exists in this account (setup v3+). Every IAM role our stack
+   * creates is capped by it — it grants nothing, so no Lambda loses a permission.
+   * Absent means "the host can't confirm one", never "remove the one you have": stack.ts
+   * then keeps whatever the deployed stack already carries.
+   */
+  permissionsBoundaryArn?: string;
   account: { accountId: string; region: string };
 }
 
@@ -31,6 +39,17 @@ export type AwsCredentialIdentityProvider = () => Promise<AwsCredentialIdentity>
 
 const REFRESH_BUFFER_MS = 300_000; // re-mint 5 min before expiry
 
+/**
+ * A usable IAM policy ARN, or undefined. Deliberately shape-checked rather than merely
+ * truthy — see the call site in readBootstrap. Partition-agnostic (`aws`, `aws-cn`,
+ * `aws-us-gov`) and it requires a non-empty policy name.
+ */
+function boundaryArnOrUndefined(v: unknown): string | undefined {
+  if (typeof v !== "string") return undefined;
+  const arn = v.trim();
+  return /^arn:aws[a-z-]*:iam::\d{12}:policy\/.+/.test(arn) ? arn : undefined;
+}
+
 export function readBootstrap(): BackendBootstrap {
   const raw = process.env.AGENTSPOPPY_BOOTSTRAP;
   if (!raw) throw new Error("AGENTSPOPPY_BOOTSTRAP is not set — this backend must be spawned by AgentsPoppy.");
@@ -43,6 +62,13 @@ export function readBootstrap(): BackendBootstrap {
   if (!boot.connectionId || !boot.credentialsUrl || !boot.account?.accountId) {
     throw new Error("AGENTSPOPPY_BOOTSTRAP is missing required fields (connectionId/credentialsUrl/account).");
   }
+  // Only something that actually LOOKS like an IAM policy ARN counts as confirmed.
+  // Anything else — absent, empty, whitespace, the wrong type, a bare policy name from an
+  // older or odd host — reads as "unconfirmed" so the deploy falls back to what the stack
+  // already carries. A malformed value passed through verbatim would make the template's
+  // HasPermissionsBoundary condition TRUE and then fail every CreateRole in the stack: a
+  // rolled-back deploy instead of the graceful unbounded one the design promises.
+  boot.permissionsBoundaryArn = boundaryArnOrUndefined(boot.permissionsBoundaryArn);
   return boot;
 }
 

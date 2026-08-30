@@ -130,6 +130,46 @@ describe("the collector Lambda + its scoped role", () => {
   });
 });
 
+describe("AgentsPoppy's permissions boundary (broker-role-v2 step 2)", () => {
+  const roles = Object.entries(template.Resources).filter(
+    ([, r]) => (r as { Type: string }).Type === "AWS::IAM::Role",
+  ) as [string, { Properties: Record<string, any> }][];
+
+  it("takes the boundary as a parameter that DEFAULTS TO EMPTY", () => {
+    // An account whose AgentsPoppy setup predates the boundary policy has no such policy,
+    // and CreateRole naming one that doesn't exist is refused by IAM — so "no boundary"
+    // must stay a deployable state, not a broken one.
+    const param = template.Parameters!.PermissionsBoundaryArn as { Type: string; Default: string };
+    expect(param.Type).toBe("String");
+    expect(param.Default).toBe("");
+  });
+
+  it("switches on whether the parameter is set", () => {
+    expect(template.Conditions!.HasPermissionsBoundary).toEqual({
+      "Fn::Not": [{ "Fn::Equals": [{ Ref: "PermissionsBoundaryArn" }, ""] }],
+    });
+  });
+
+  it("caps EVERY role it creates — a new role can't quietly go uncapped", () => {
+    expect(roles.map(([name]) => name)).toEqual(["CollectorRole", "ViewerRole"]);
+    for (const [name, role] of roles) {
+      expect(role.Properties.PermissionsBoundary, `${name} must carry the boundary`).toEqual({
+        "Fn::If": ["HasPermissionsBoundary", { Ref: "PermissionsBoundaryArn" }, { Ref: "AWS::NoValue" }],
+      });
+    }
+  });
+
+  it("caps, never grants — the roles' own policies are identical either way", () => {
+    // The boundary is a ceiling on what a role may ever do; it hands out nothing. The
+    // property is the ONLY difference between a bounded and an unbounded deploy, so no
+    // Lambda can lose a runtime permission when the host starts passing the ARN.
+    for (const [name, role] of roles) {
+      const statements = role.Properties.Policies[0].PolicyDocument.Statement;
+      expect(JSON.stringify(statements), `${name}`).not.toContain("PermissionsBoundary");
+    }
+  });
+});
+
 describe("leaves no trace (AGENTS.md §4)", () => {
   const resources = Object.entries(template.Resources) as [
     string,
@@ -190,6 +230,21 @@ describe("the template stays in lockstep with the manifest's declared scope", ()
     expect(actionsOf("dynamodb")).toContain("ListTagsOfResource");
     // And the only exit from UPDATE_ROLLBACK_FAILED that keeps the Function URL alive:
     expect(actionsOf("cloudformation")).toContain("ContinueUpdateRollback");
+  });
+
+  it("grants the boundary permissions the roles' PermissionsBoundary property actually needs", () => {
+    // Attaching one to a role that already exists is PutRolePermissionsBoundary, and
+    // CloudFormation calls DeleteRolePermissionsBoundary when an update flips the
+    // parameter back to empty — so an update on an existing user's stack fails without
+    // BOTH, exactly the way the missing TTL grants failed a create.
+    const setsBoundary = Object.values(template.Resources).some(
+      (r) => (r as { Type: string; Properties?: Record<string, unknown> }).Properties?.PermissionsBoundary,
+    );
+    const iamActions = manifest.permissionSet.grants.find((g) => g.service === "iam")!.actions;
+    if (setsBoundary) {
+      expect(iamActions).toContain("PutRolePermissionsBoundary");
+      expect(iamActions).toContain("DeleteRolePermissionsBoundary");
+    }
   });
 
   it("grants the TTL permissions the template's TimeToLiveSpecification actually needs", () => {

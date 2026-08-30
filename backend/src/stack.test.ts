@@ -8,7 +8,7 @@ import {
   UpdateStackCommand,
   type CloudFormationClient,
 } from "@aws-sdk/client-cloudformation";
-import { deploy, getStatus, teardown, TEMPLATE_KEY_TAG, type AwsCtx } from "./stack";
+import { boundaryParameterValue, deploy, getStatus, teardown, TEMPLATE_KEY_TAG, type AwsCtx } from "./stack";
 import { lambdaCodeKey, templateKey } from "./generated/backend-bundle";
 import { TAG_APP, TAG_ACCOUNT, TAG_CONNECTION } from "./tags";
 import type { S3Client } from "@aws-sdk/client-s3";
@@ -68,6 +68,17 @@ const notFound = Object.assign(new Error("Stack with id TrafficPoppyStack does n
 const stackWith = (StackStatus: string, Tags: { Key: string; Value: string }[] = []) => ({
   Stacks: [{ StackStatus, Tags }],
 });
+/** A deployed stack described with the parameter values it currently carries. */
+const stackWithParams = (StackStatus: string, Parameters: { ParameterKey: string; ParameterValue: string }[]) => ({
+  Stacks: [{ StackStatus, Tags: [], Parameters }],
+});
+
+/** AgentsPoppy's account-wide boundary policy, as the host would send it. */
+const BOUNDARY = "arn:aws:iam::111122223333:policy/AgentsPoppyBoundary";
+
+/** The parameters a Create/UpdateStack actually went out with, keyed by name. */
+const paramsOf = (cmd: { input: { Parameters?: { ParameterKey?: string; ParameterValue?: string }[] } }) =>
+  Object.fromEntries((cmd.input.Parameters ?? []).map((p) => [p.ParameterKey, p.ParameterValue]));
 
 // waitUntilStackDeleteComplete polls the real client; stub the module so the delete paths
 // don't sleep through a waiter in unit tests.
@@ -278,6 +289,76 @@ describe("deploy", () => {
     expect(sent.find((c) => c instanceof UpdateStackCommand)).toBeUndefined();
   });
 
+  it("passes the boundary the host confirmed, on every role the stack creates", async () => {
+    const { client, sent } = fakeCfn({ describe: [notFound] });
+    await deploy(awsCtx(client), attribution, BOUNDARY);
+    const create = sent.find((c) => c instanceof CreateStackCommand) as CreateStackCommand;
+    expect(paramsOf(create).PermissionsBoundaryArn).toBe(BOUNDARY);
+  });
+
+  it("deploys UNBOUNDED on a fresh create when the host confirms nothing", async () => {
+    // The host sends the ARN only once it has seen the policy; naming one that isn't in
+    // the account is refused by IAM, so an empty parameter must stay a working deploy.
+    const { client, sent } = fakeCfn({ describe: [notFound] });
+    await deploy(awsCtx(client), attribution);
+    const create = sent.find((c) => c instanceof CreateStackCommand) as CreateStackCommand;
+    expect(paramsOf(create).PermissionsBoundaryArn).toBe("");
+  });
+
+  it("PRESERVES a deployed boundary when the host doesn't send one — never strips it", async () => {
+    // A host-side hiccup (an older host, a failed lookup) must not quietly uncap roles
+    // that are already bounded.
+    const { client, sent } = fakeCfn({
+      describe: [stackWithParams("CREATE_COMPLETE", [{ ParameterKey: "PermissionsBoundaryArn", ParameterValue: BOUNDARY }])],
+    });
+    await deploy(awsCtx(client), attribution);
+    const update = sent.find((c) => c instanceof UpdateStackCommand) as UpdateStackCommand;
+    expect(paramsOf(update).PermissionsBoundaryArn).toBe(BOUNDARY);
+  });
+
+  it("always states the boundary explicitly — UsePreviousValue would fail the first update", async () => {
+    // The parameter is new to the template, so on the very first update after it lands
+    // there is no previous value to reuse and CloudFormation rejects the request.
+    const { client, sent } = fakeCfn({ describe: [stackWith("CREATE_COMPLETE")] });
+    await deploy(awsCtx(client), attribution, BOUNDARY);
+    const update = sent.find((c) => c instanceof UpdateStackCommand) as UpdateStackCommand;
+    const p = (update.input.Parameters ?? []).find((x) => x.ParameterKey === "PermissionsBoundaryArn")!;
+    expect(p.ParameterValue).toBe(BOUNDARY);
+    expect(p.UsePreviousValue).toBeUndefined();
+  });
+
+  it("carries NOTHING forward off a dead stack it is about to delete and recreate", async () => {
+    // A ROLLBACK_COMPLETE stack has no live roles left to protect, so preserving its ARN
+    // buys no safety — and if that unconfirmed policy is why the create rolled back,
+    // naming it in the fresh CreateRole fails the retry the same way, forever.
+    const { client, sent } = fakeCfn({
+      describe: [stackWithParams("ROLLBACK_COMPLETE", [{ ParameterKey: "PermissionsBoundaryArn", ParameterValue: BOUNDARY }])],
+    });
+    const r = await deploy(awsCtx(client), attribution);
+    expect(r.operation).toBe("RECREATE");
+    const create = sent.find((c) => c instanceof CreateStackCommand) as CreateStackCommand;
+    expect(paramsOf(create).PermissionsBoundaryArn).toBe("");
+  });
+
+  it("still applies a host-CONFIRMED boundary to a stack being recreated", async () => {
+    // Only the *unconfirmed* fallback is dropped on a dead stack; an ARN the host has
+    // actually seen in the account is still the safe, correct thing to name.
+    const { client, sent } = fakeCfn({ describe: [stackWith("ROLLBACK_COMPLETE")] });
+    await deploy(awsCtx(client), attribution, BOUNDARY);
+    const create = sent.find((c) => c instanceof CreateStackCommand) as CreateStackCommand;
+    expect(paramsOf(create).PermissionsBoundaryArn).toBe(BOUNDARY);
+  });
+
+  it("ABORTS when the stack can't be read — an unreadable stack is not an unbounded one", async () => {
+    // The fail direction that matters. A throttle or an expired credential answering
+    // "there is no boundary" would hand CloudFormation an empty parameter that strips the
+    // ceiling off every existing role. Only a positive "does not exist" may mean unbounded.
+    const { client, sent } = fakeCfn({ describe: [new Error("Rate exceeded")] });
+    await expect(deploy(awsCtx(client), attribution)).rejects.toThrow(/Rate exceeded/);
+    expect(sent.find((c) => c instanceof CreateStackCommand)).toBeUndefined();
+    expect(sent.find((c) => c instanceof UpdateStackCommand)).toBeUndefined();
+  });
+
   it("lets a real AWS failure surface rather than swallowing it", async () => {
     const { client } = fakeCfn({
       describe: [stackWith("CREATE_COMPLETE")],
@@ -320,5 +401,35 @@ describe("teardown — must leave no trace, and must be idempotent (AGENTS.md §
     const { client, sent } = fakeCfn({ describe: [stackWith("ROLLBACK_COMPLETE")] });
     await teardown(awsCtx(client));
     expect(sent.find((c) => c instanceof DeleteStackCommand)).toBeDefined();
+  });
+});
+
+describe("boundaryParameterValue — the precedence rule on its own", () => {
+  it("takes the host's confirmed ARN over anything deployed", () => {
+    expect(boundaryParameterValue({ confirmed: BOUNDARY, status: "UPDATE_COMPLETE", deployed: "arn:aws:iam::111122223333:policy/Old" })).toBe(BOUNDARY);
+  });
+
+  it("preserves the deployed boundary when the host confirms nothing", () => {
+    expect(boundaryParameterValue({ status: "UPDATE_COMPLETE", deployed: BOUNDARY })).toBe(BOUNDARY);
+  });
+
+  it("is empty when there is no stack and nothing confirmed", () => {
+    expect(boundaryParameterValue({})).toBe("");
+  });
+
+  it("is empty on a live stack that carries no boundary", () => {
+    expect(boundaryParameterValue({ status: "CREATE_COMPLETE" })).toBe("");
+  });
+
+  it("drops the unconfirmed fallback on a stack about to be recreated", () => {
+    for (const status of ["ROLLBACK_COMPLETE", "REVIEW_IN_PROGRESS"]) {
+      expect(boundaryParameterValue({ status, deployed: BOUNDARY }), status).toBe("");
+    }
+  });
+
+  it("keeps a confirmed ARN on a stack about to be recreated", () => {
+    for (const status of ["ROLLBACK_COMPLETE", "REVIEW_IN_PROGRESS"]) {
+      expect(boundaryParameterValue({ confirmed: BOUNDARY, status }), status).toBe(BOUNDARY);
+    }
   });
 });

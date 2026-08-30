@@ -128,6 +128,43 @@ execution role**, so unlike VM-Poppy this poppy cannot be IAM-free. Same class a
   (action names containing put/set/create/delete rate as writes — see vm-poppy DESIGN DR3).
 - Declare ONLY actions the backend calls (STS packed-policy budget — vm-poppy DR5 lesson).
 
+**The AgentsPoppy permissions boundary** (`agentspoppy/docs/specs/broker-role-v2.md` step 2).
+A name-scoped grant to create roles is, by itself, enough to mint an account administrator:
+create `TrafficPoppyX`, write `*:*` on it, pass it to a Lambda. AgentsPoppy closes that with a
+managed policy, `AgentsPoppyBoundary`, that CAPS every role a poppy creates, and TrafficPoppy
+attaches it:
+
+- the core template takes `PermissionsBoundaryArn` (default `""`) with a
+  `HasPermissionsBoundary` condition, and both roles carry
+  `PermissionsBoundary: Fn::If(…, Ref, AWS::NoValue)` — the same idiom `edge-template.ts`
+  already uses for `ViewerUrlHost`. It is a PARAMETER, not a hard-coded ARN, because IAM
+  refuses `CreateRole` outright when the named boundary isn't in the account: hard-coding it
+  would break every user who hasn't re-applied AgentsPoppy's setup yet;
+- the backend passes the ARN the bootstrap carries (the host sends it ONLY once it has
+  confirmed the policy exists), else the value the deployed stack already has, else `""`.
+  Absent is not "no boundary" — that ordering is what stops a transient host read from
+  stripping a boundary off live roles. Always an explicit parameter, never
+  `UsePreviousValue`, which fails on the first update after a template gains a parameter.
+  The rule lives alone, pure and exported, in `stack.ts::boundaryParameterValue`, with three
+  edges an adversarial review pinned down and tests now hold:
+  - **A dead stack carries nothing forward.** On `ROLLBACK_COMPLETE` /
+    `REVIEW_IN_PROGRESS` the deploy deletes and re-creates, so there are no live roles left
+    to protect — and preserving would name an UNCONFIRMED ARN in a fresh `CreateRole`. If
+    that ARN is *why* the create rolled back, every retry fails identically: one bad deploy
+    becomes a self-perpetuating outage. A host-confirmed ARN still applies normally.
+  - **An unreadable stack aborts the deploy.** `describe()` returns null only for a positive
+    "does not exist" and rethrows everything else, so a throttle or an expired credential can
+    never be read as "no boundary" — answering `""` there would hand CloudFormation an empty
+    parameter that silently uncaps every existing role.
+  - **Only an IAM-policy-shaped ARN counts as confirmed** (`boot.ts`). Truthy is not enough:
+    whitespace or a bare policy name would make `HasPermissionsBoundary` true and then fail
+    every `CreateRole` in the stack — a rolled-back deploy where an unbounded one was
+    promised;
+- the manifest gained `iam:PutRolePermissionsBoundary` + `iam:DeleteRolePermissionsBoundary`
+  on the existing `TrafficPoppy*` role scope (CloudFormation calls the second when an update
+  turns the boundary back off). The rating is unchanged — verified against the real assessor,
+  not by eye. Grants changing means the host re-asks users to approve once.
+
 ## 6. Privacy & compliance posture (the product's spine)
 
 - **The site owner is the data controller.** TrafficPoppy is self-hosted software; Olly
