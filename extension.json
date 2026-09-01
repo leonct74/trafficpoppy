@@ -178,6 +178,11 @@
       "infrastructure": "websites"
     }
   },
+  "compliance": {
+    "dataHandled": "Website analytics events collected by your own tracking endpoint and aggregated only in your own AWS account. The developer receives nothing.",
+    "subprocessors": [],
+    "securityContact": "support@agentspoppy.com"
+  },
   "frontend": {
     "entry": "frontend/index.html"
   },
