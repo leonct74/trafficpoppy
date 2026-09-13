@@ -175,6 +175,17 @@ attaches it:
   (§7c), a viewer's browser does fetch page assets from us, so access logs exist. The data
   path stays owner's-AWS → owner's-browser and carries nothing to us; a technical buyer will
   check this, so the wording must survive the check.
+- **Public copy speaks of "your own cloud", and leads with GDPR (founder, 2026-09-13).** The
+  site "mentions many time AWS, while it should talk genericly about Cloud and not a specific
+  cloud", and never said "that it is GDPR compliant, so it can be used without a cookie
+  banner". Applied to all three public surfaces — trafficpoppy.agentspoppy.com (repo
+  `trafficpoppy-website`), the catalogue listing, and agentspoppy.com/trafficpoppy: no provider
+  names in visible copy; the claim is **"GDPR-compliant by design"**, always carried by its
+  mechanism (nothing stored on or read from the device; no personal data kept — IP never
+  written, unique-visitor salt destroyed on rotation; opt-outs not counted; no analytics
+  processor, so no data processing agreement with us) and closed by *"you remain the controller
+  for your own website; this is not legal advice"*. The 1–7-day window (§6b) is described as "up
+  to a week, one day unless you change it" — counsel question (e) still governs the 7-day end.
 - **Banner-free by design**: nothing stored/read on the visitor's device (ePrivacy clean);
   no personal data at rest (GDPR: anonymous aggregates are out of scope; the transient IP
   in-memory is ordinary server processing, same as any web server log — legitimate interest).
